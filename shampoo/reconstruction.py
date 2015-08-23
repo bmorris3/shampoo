@@ -63,8 +63,8 @@ def make_items_hashable(input_iterable):
     hashable_tuple : tuple
         ``input_iterable`` made hashable
     """
-    return tuple([i if not isinstance(i, list) else tuple(i)
-                  for i in input_iterable])
+    return tuple([tuple(i) if isinstance(i, list) or isinstance(i, np.ndarray)
+                  else i for i in input_iterable])
 
 class Hologram(object):
     """
@@ -223,7 +223,7 @@ class Hologram(object):
         R : ndarray
             Reference wave array
         """
-        order = 3
+        order = 3#2
         OPD = self.wavelength / (2*np.pi)
         y, x = self.mgrid - self.n/2
         pixvec = x[0, self.detector_edge_margin:-self.detector_edge_margin]
@@ -235,21 +235,43 @@ class Hologram(object):
                        self.detector_edge_margin:-self.detector_edge_margin]*2.0)/2*OPD
         py = np.unwrap(pimg2[self.detector_edge_margin:-self.detector_edge_margin,
                        self.background_columns].T*2.0)/2*OPD
-        # px = np.unwrap(pimg2[self.background_rows,
-        #                self.detector_edge_margin:-self.detector_edge_margin]*2.0)/2*OPD
-        # py = np.unwrap(pimg2[self.detector_edge_margin:-self.detector_edge_margin,
-        #                self.background_columns].T*2.0)/2*OPD
+
         if plots:
             px_before_median = px.copy()
             py_before_median = py.copy()
-        px = np.mean(px, axis=0)
-        py = np.mean(py, axis=0)
-        # px = np.median(px, axis=0)
-        # py = np.median(py, axis=0)
 
-        pxpoly = np.polyfit(pixvec, px, order)
-        pypoly = np.polyfit(pixvec, py, order)
+        # Since you can't know which rows/cols are background rows/cols a
+        # priori, find the phase profiles along each row, fit polynomials to
+        # each, measure the rms error to the fit. Do a second fit excluding
+        # high error rows/cols and taking the median of the good ones.
 
+        # initial median fit to rows/cols
+        pxpoly_init = np.polyfit(pixvec, np.median(px, axis=0), order)
+        pypoly_init = np.polyfit(pixvec, np.median(py, axis=0), order)
+
+        # subtract each row by initial fit, take std to measure error
+        rms_x = np.std(np.polyval(pxpoly_init, pixvec)[:,np.newaxis] -
+                       px.T, axis=0)
+        rms_y = np.std(np.polyval(pypoly_init, pixvec)[:,np.newaxis] -
+                       py.T, axis=0)
+
+        x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
+                               0.5*np.std(rms_x))
+        y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
+                               0.5*np.std(rms_y))
+
+        # Second fit to the median of only the typical rows/columns:
+        pxpoly = np.polyfit(pixvec, np.median(px[x_within_some_sigma], axis=0),
+                            order)
+        pypoly = np.polyfit(pixvec, np.median(py[y_within_some_sigma], axis=0),
+                            order)
+
+        # plt.plot(pixvec, px.T/OPD)
+        # fig, ax = plt.subplots(1, 2, figsize=(18, 6))
+        # ax[0].plot(pixvec, px.T/OPD)
+        # ax[0].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r', lw=5)
+        # ax[1].plot(pixvec, py.T/OPD)
+        # ax[1].plot(pixvec, np.polyval(pypoly, pixvec)/OPD, 'r', lw=5)
         R = np.exp(-1j/OPD*(np.polyval(pxpoly, x) + np.polyval(pypoly, y)))
 
         if plots:
@@ -261,16 +283,17 @@ class Hologram(object):
              for background_column in self.background_columns]
 
             ax[1].plot(pixvec, px_before_median.T/OPD)
-            ax[1].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r--')
+            ax[1].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r', lw=4)
             ax[1].set_title('rows (x)')
 
             ax[2].plot(pixvec, py_before_median.T/OPD)
-            ax[2].plot(pixvec, np.polyval(pypoly, pixvec)/OPD, 'r--')
+            ax[2].plot(pixvec, np.polyval(pypoly, pixvec)/OPD, 'r', lw=4)
             ax[2].set_title('cols (y)')
             # plt.figure()
             # plt.imshow(np.arctan(np.imag(R)/np.real(R)))#, origin='lower')
             # plt.title('Fitted phase mask')
             plt.show()
+
         return R
 
     def apodize(self, arr):
