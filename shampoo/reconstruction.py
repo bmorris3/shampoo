@@ -120,10 +120,7 @@ class Hologram(object):
                                          self.background_rows,
                                          self.background_columns, self.dx,
                                          self.dy, self.detector_edge_margin))
-        if cache_key in self.reconstructions:
-            reconstructed_wavefield = self.reconstructions[cache_key]
-
-        else:
+        if cache_key not in self.reconstructions:
             reconstructed_wavefield, reference_wave = self.reconstruct_wavefield(propagation_distance,
                                                                                  plot_aberration_correction=plot_aberration_correction)
             if self.reference_wave is None:
@@ -132,7 +129,8 @@ class Hologram(object):
 
         return self.reconstructions[cache_key]
 
-    def reconstruct_wavefield(self, propagation_distance, plot_aberration_correction=False):
+    def reconstruct_wavefield(self, propagation_distance,
+                              plot_aberration_correction=False):
         """
         Reconstruct wavefield from hologram stored in file ``hologram_path`` at
         propagation distance ``propagation_distance``.
@@ -194,8 +192,10 @@ class Hologram(object):
 
         # Reconstruct the image
         psi = G*shift_peak(np.fft.fft2(apodized_hologram*reference_wave)*mask,
-                           [self.n/2 - spectrum_centroid[1], self.n/2 - spectrum_centroid[0]])
-        reconstructed_wavefield = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
+                           [self.n/2 - spectrum_centroid[1],
+                            self.n/2 - spectrum_centroid[0]])
+        reconstructed_wavefield = shift_peak(np.fft.ifft2(psi),
+                                             [self.n/2, self.n/2])
         return reconstructed_wavefield, reference_wave
 
     def calculate_reference_wave(self, psi, plots=False):
@@ -235,11 +235,17 @@ class Hologram(object):
                        self.detector_edge_margin:-self.detector_edge_margin]*2.0)/2*OPD
         py = np.unwrap(pimg2[self.detector_edge_margin:-self.detector_edge_margin,
                        self.background_columns].T*2.0)/2*OPD
+        # px = np.unwrap(pimg2[self.background_rows,
+        #                self.detector_edge_margin:-self.detector_edge_margin]*2.0)/2*OPD
+        # py = np.unwrap(pimg2[self.detector_edge_margin:-self.detector_edge_margin,
+        #                self.background_columns].T*2.0)/2*OPD
         if plots:
             px_before_median = px.copy()
             py_before_median = py.copy()
-        px = np.median(px, axis=0)
-        py = np.median(py, axis=0)
+        px = np.mean(px, axis=0)
+        py = np.mean(py, axis=0)
+        # px = np.median(px, axis=0)
+        # py = np.median(py, axis=0)
 
         pxpoly = np.polyfit(pixvec, px, order)
         pypoly = np.polyfit(pixvec, py, order)
@@ -249,8 +255,10 @@ class Hologram(object):
         if plots:
             fig, ax = plt.subplots(1,3,figsize=(16,8))
             ax[0].imshow(np.unwrap(pimg2), origin='lower')
-            [ax[0].axhline(background_row) for background_row in self.background_rows]
-            [ax[0].axvline(background_column) for background_column in self.background_columns]
+            [ax[0].axhline(background_row)
+             for background_row in self.background_rows]
+            [ax[0].axvline(background_column)
+             for background_column in self.background_columns]
 
             ax[1].plot(pixvec, px_before_median.T/OPD)
             ax[1].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r--')
@@ -312,9 +320,14 @@ class Hologram(object):
             Fourier transform of impulse response function
         """
         y, x = self.mgrid - self.n/2
-        A = self.wavelength**2*(x+self.n**2*self.dx**2/(2.0*propagation_distance*self.wavelength))**2/(self.n**2*self.dx**2)
-        B = self.wavelength**2*(y+self.n**2*self.dy**2/(2.0*propagation_distance*self.wavelength))**2/(self.n**2*self.dy**2)
-        G = np.exp(-1j*2.0*np.pi*propagation_distance/self.wavelength*np.sqrt(1.0-A-B))
+        A = (self.wavelength**2*(x+self.n**2*self.dx**2/
+                                (2.0*propagation_distance*self.wavelength))**2 /
+             (self.n**2*self.dx**2))
+        B = (self.wavelength**2*(y+self.n**2*self.dy**2/
+                                 (2.0*propagation_distance*self.wavelength))**2/
+             (self.n**2*self.dy**2))
+        G = np.exp(-1j*2.0*np.pi*propagation_distance /
+                   self.wavelength*np.sqrt(1.0-A-B))
         return G
 
     def generate_real_image_mask(self, center_x, center_y, radius):
@@ -364,9 +377,6 @@ class Hologram(object):
         pixel
         """
         margin = int(self.n*margin_factor)
-        # abs_fourier_arr = filters.gaussian_filter(np.abs(fourier_arr)[margin:self.n/2, margin:self.n/2], 10)
-        # spectrum_centroid = np.array(np.unravel_index(abs_fourier_arr.T.argmax(),
-        #                              abs_fourier_arr.shape)) + margin
         abs_fourier_arr = filters.gaussian_filter(np.abs(fourier_arr)[margin:-margin,
                                                   margin:-margin], 10)
         spectrum_centroid = np.array(np.unravel_index(abs_fourier_arr.T.argmax(),
@@ -426,4 +436,5 @@ class ReconstructedWavefield(object):
                          origin='lower')
             ax[1].imshow(self.phase_image[::-1,::-1], cmap=cmap,
                          origin='lower')
-            plt.show()
+            #plt.show()
+        return fig, ax
