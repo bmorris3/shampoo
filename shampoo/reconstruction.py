@@ -68,22 +68,17 @@ def make_items_hashable(input_iterable):
 
 class Hologram(object):
     """
-    Container for holograms and their reference waves
+    Container for holograms and their reference wavefields
     """
     def __init__(self, hologram_path, wavelength=405e-9,
-                 background_rows=[870, 140], background_columns=[140, 890],
                  rebin_factor=1, dx=3.45e-6, dy=3.45e-6,
-                 detector_edge_margin=0.15):
+                 detector_edge_margin=0.15, background_interval=3):
         """
         Parameters
         hologram_path : string
             Path to input hologram to reconstruct
         wavelength : float [meters]
             Wavelength of laser
-        background_rows: list of integers
-            Rows used for measuring aberrations
-        background_columns : list of integers
-            Rows used for measuring aberrations
         rebin_factor : int
             Rebin the image by factor ``rebin_factor``. Must be an even integer.
         dx : float [meters]
@@ -99,12 +94,13 @@ class Hologram(object):
         self.n = self.hologram.shape[0]
         self.reference_wave = None
         self.wavelength = wavelength
+        self.wavenumber = 2*np.pi/self.wavelength
         self.reconstructions = dict()
         self.dx = dx*rebin_factor
         self.dy = dy*rebin_factor
-        self.detector_edge_margin = int(self.n/rebin_factor*detector_edge_margin)
-        self.background_columns = background_columns
-        self.background_rows = background_rows
+        self.edge_margin = int(self.n/rebin_factor*detector_edge_margin)
+        self.background_columns = np.arange(0, self.n, background_interval)
+        self.background_rows = np.arange(0, self.n, background_interval)
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
 
     def _load_hologram(self):
@@ -119,7 +115,7 @@ class Hologram(object):
         cache_key = make_items_hashable((propagation_distance, self.wavelength,
                                          self.background_rows,
                                          self.background_columns, self.dx,
-                                         self.dy, self.detector_edge_margin))
+                                         self.dy, self.edge_margin))
         if cache_key not in self.reconstructions:
             reconstructed_wavefield, reference_wave = self.reconstruct_wavefield(propagation_distance,
                                                                                  plot_aberration_correction=plot_aberration_correction)
@@ -150,7 +146,7 @@ class Hologram(object):
             Rows in the reconstructed image where there is no specimen
         background_columns : list
             Columns in the reconstructed image where there is no specimen
-        detector_edge_margin : int
+        edge_margin : int
             Margin from edges of detector to avoid
 
         Returns
@@ -187,8 +183,8 @@ class Hologram(object):
             psi = shifted_F_hologram*G
 
             # Calculate reference wave
-            reference_wave = self.calculate_reference_wave(psi,
-                                                           plots=plot_aberration_correction)
+            reference_wave = self.calculate_digital_phase_mask(psi,
+                                                               plots=plot_aberration_correction)
 
         # Reconstruct the image
         psi = G*shift_peak(np.fft.fft2(apodized_hologram*reference_wave)*mask,
@@ -198,9 +194,13 @@ class Hologram(object):
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield, reference_wave
 
-    def calculate_reference_wave(self, psi, plots=False):
+    def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
+                                     n_aberr_corr_iter=2):
         """
-        Calculate the reference wave.
+        Calculate the digital phase mask (i.e. reference wave), as in Colomb et
+        al. 2006, Eqn. 26 [1]_.
+
+        .. [1] http://www.ncbi.nlm.nih.gov/pubmed/16512526
 
         Parameters
         ----------
@@ -213,32 +213,35 @@ class Hologram(object):
             Rows in the reconstructed image where there is no specimen
         background_columns : list
             Columns in the reconstructed image where there is no specimen
-        detector_edge_margin : int
+        edge_margin : int
             Margin from edges of detector to avoid
         plots : bool
             Display plots after calculation if `True`
+        aberr_corr_order : int
+            Polynomial order of the aberration corrections
+        n_aberr_corr_iter : int
+            Number of aberration correction iterations
 
         Returns
         -------
         R : ndarray
             Reference wave array
         """
-        order = 3#2
-        OPD = self.wavelength / (2*np.pi)
+        order = aberr_corr_order#3#2
         y, x = self.mgrid - self.n/2
-        pixvec = x[0, self.detector_edge_margin:-self.detector_edge_margin]
-        img2 = np.fft.ifft2(psi)
-        img2 = shift_peak(img2, [self.n/2, self.n/2])
-        pimg2 = np.arctan(np.imag(img2)/np.real(img2))
+        pixel_indices = x[0, self.edge_margin:-self.edge_margin]
+        inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
+        phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
 
-        px = np.unwrap(pimg2[self.background_rows,
-                       self.detector_edge_margin:-self.detector_edge_margin]*2.0)/2*OPD
-        py = np.unwrap(pimg2[self.detector_edge_margin:-self.detector_edge_margin,
-                       self.background_columns].T*2.0)/2*OPD
+        phase_x = (np.unwrap(2*phase_image[self.background_rows,
+                   self.edge_margin:-self.edge_margin])/2 /
+                   self.wavenumber)
+        phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
+                   self.background_columns].T)/2/self.wavenumber)
 
         if plots:
-            px_before_median = px.copy()
-            py_before_median = py.copy()
+            phase_x_before_median = phase_x.copy()
+            phase_y_before_median = phase_y.copy()
 
         # Since you can't know which rows/cols are background rows/cols a
         # priori, find the phase profiles along each row, fit polynomials to
@@ -246,55 +249,75 @@ class Hologram(object):
         # high error rows/cols and taking the median of the good ones.
 
         # initial median fit to rows/cols
-        pxpoly_init = np.polyfit(pixvec, np.median(px, axis=0), order)
-        pypoly_init = np.polyfit(pixvec, np.median(py, axis=0), order)
+        pxpoly_init = np.polyfit(pixel_indices, np.median(phase_x, axis=0),
+                                 order)
+        pypoly_init = np.polyfit(pixel_indices, np.median(phase_y, axis=0),
+                                 order)
 
         # subtract each row by initial fit, take std to measure error
-        rms_x = np.std(np.polyval(pxpoly_init, pixvec)[:,np.newaxis] -
-                       px.T, axis=0)
-        rms_y = np.std(np.polyval(pypoly_init, pixvec)[:,np.newaxis] -
-                       py.T, axis=0)
+        rms_x = np.std(np.polyval(pxpoly_init, pixel_indices)[:,np.newaxis] -
+                       phase_x.T, axis=0)
+        rms_y = np.std(np.polyval(pypoly_init, pixel_indices)[:,np.newaxis] -
+                       phase_y.T, axis=0)
 
         x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
                                0.5*np.std(rms_x))
         y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
                                0.5*np.std(rms_y))
 
-        # Second fit to the median of only the typical rows/columns:
-        pxpoly = np.polyfit(pixvec, np.median(px[x_within_some_sigma], axis=0),
-                            order)
-        pypoly = np.polyfit(pixvec, np.median(py[y_within_some_sigma], axis=0),
-                            order)
+        # First fit to the median of only the typical rows/columns:
+        phase_x_background = np.median(phase_x[x_within_some_sigma], axis=0)
+        phase_y_background = np.median(phase_y[y_within_some_sigma], axis=0)
+        phase_x_polynomials = np.polyfit(pixel_indices, phase_x_background,
+                                         order)
+        phase_y_polynomials = np.polyfit(pixel_indices, phase_y_background,
+                                         order)
 
-        # plt.plot(pixvec, px.T/OPD)
-        # fig, ax = plt.subplots(1, 2, figsize=(18, 6))
-        # ax[0].plot(pixvec, px.T/OPD)
-        # ax[0].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r', lw=5)
-        # ax[1].plot(pixvec, py.T/OPD)
-        # ax[1].plot(pixvec, np.polyval(pypoly, pixvec)/OPD, 'r', lw=5)
-        R = np.exp(-1j/OPD*(np.polyval(pxpoly, x) + np.polyval(pypoly, y)))
+        # Iterate to fit the median of typical rows/columns multiple times
+        background_x_polynomials = phase_x_polynomials.copy()
+        background_y_polynomials = phase_y_polynomials.copy()
+        for n in range(n_aberr_corr_iter):
+            background_x_polynomials += np.polyfit(pixel_indices,
+                                        phase_x_background -
+                                        np.polyval(background_x_polynomials,
+                                                   pixel_indices),
+                                        order)
+            background_y_polynomials += np.polyfit(pixel_indices,
+                                        phase_y_background -
+                                        np.polyval(background_y_polynomials,
+                                                   pixel_indices),
+                                        order)
+
+        digital_phase_mask = np.exp(-1j*self.wavenumber *
+                                    (np.polyval(background_x_polynomials, x) +
+                                     np.polyval(background_y_polynomials, y)))
 
         if plots:
             fig, ax = plt.subplots(1,3,figsize=(16,8))
-            ax[0].imshow(np.unwrap(pimg2), origin='lower')
+            ax[0].imshow(np.unwrap(phase_image), origin='lower')
             [ax[0].axhline(background_row)
-             for background_row in self.background_rows]
+             for background_row in self.background_rows[x_within_some_sigma]]
             [ax[0].axvline(background_column)
-             for background_column in self.background_columns]
+             for background_column in self.background_columns[y_within_some_sigma]]
 
-            ax[1].plot(pixvec, px_before_median.T/OPD)
-            ax[1].plot(pixvec, np.polyval(pxpoly, pixvec)/OPD, 'r', lw=4)
+            ax[1].plot(pixel_indices,
+                       phase_x_before_median[x_within_some_sigma].T *
+                       self.wavenumber)
+            ax[1].plot(pixel_indices,
+                       np.polyval(phase_x_polynomials, pixel_indices) *
+                       self.wavenumber, 'r', lw=4)
             ax[1].set_title('rows (x)')
 
-            ax[2].plot(pixvec, py_before_median.T/OPD)
-            ax[2].plot(pixvec, np.polyval(pypoly, pixvec)/OPD, 'r', lw=4)
+            ax[2].plot(pixel_indices,
+                       phase_y_before_median[y_within_some_sigma].T *
+                       self.wavenumber)
+            ax[2].plot(pixel_indices,
+                       np.polyval(phase_y_polynomials, pixel_indices) *
+                       self.wavenumber, 'r', lw=4)
             ax[2].set_title('cols (y)')
-            # plt.figure()
-            # plt.imshow(np.arctan(np.imag(R)/np.real(R)))#, origin='lower')
-            # plt.title('Fitted phase mask')
             plt.show()
 
-        return R
+        return digital_phase_mask
 
     def apodize(self, arr):
         """
@@ -313,7 +336,7 @@ class Hologram(object):
         y, x = self.mgrid
         suppression_exponent = 0.4
         arr *= (np.cos((x-self.n/2.)*np.pi/self.n)**suppression_exponent *
-               np.cos((y-self.n/2.)*np.pi/self.n)**suppression_exponent)
+                np.cos((y-self.n/2.)*np.pi/self.n)**suppression_exponent)
         return arr
 
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
@@ -343,15 +366,15 @@ class Hologram(object):
             Fourier transform of impulse response function
         """
         y, x = self.mgrid - self.n/2
-        A = (self.wavelength**2*(x+self.n**2*self.dx**2/
-                                (2.0*propagation_distance*self.wavelength))**2 /
-             (self.n**2*self.dx**2))
-        B = (self.wavelength**2*(y+self.n**2*self.dy**2/
-                                 (2.0*propagation_distance*self.wavelength))**2/
+        a = (self.wavelength**2 * (x + self.n**2 * self.dx**2 /
+             (2.0 * propagation_distance * self.wavelength))**2 /
+             (self.n**2 * self.dx**2))
+        b = (self.wavelength**2 * (y + self.n**2 * self.dy**2 /
+             (2.0 * propagation_distance * self.wavelength))**2 /
              (self.n**2*self.dy**2))
-        G = np.exp(-1j*2.0*np.pi*propagation_distance /
-                   self.wavelength*np.sqrt(1.0-A-B))
-        return G
+        g = np.exp(-1j * self.wavenumber* propagation_distance *
+                   np.sqrt(1.0 - a - b))
+        return g
 
     def generate_real_image_mask(self, center_x, center_y, radius):
         """
@@ -380,7 +403,6 @@ class Hologram(object):
         mask[(x-center_x)**2 + (y-center_y)**2 < radius**2] = 1.0
         return mask
     
-    #def find_fourier_peak_centroid(self, fourier_arr, margin_factor=0.05, plot=True)
     def find_fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
                                    plot=False):
         """
@@ -446,18 +468,17 @@ class ReconstructedWavefield(object):
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
                 ax.imshow(self.intensity_image[::-1,::-1], cmap=cmap,
-                          origin='lower')
+                          origin='lower', interpolation='nearest')
                 plt.show()
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
                 ax.imshow(self.phase_image[::-1,::-1], cmap=cmap,
-                          origin='lower')
+                          origin='lower', interpolation='nearest')
                 plt.show()
         else:
-            fig, ax = plt.subplots(1, 2, figsize=(18,8))
+            fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True, sharey=True)
             ax[0].imshow(self.intensity_image[::-1,::-1], cmap=cmap,
-                         origin='lower')
+                         origin='lower', interpolation='nearest')
             ax[1].imshow(self.phase_image[::-1,::-1], cmap=cmap,
-                         origin='lower')
-            #plt.show()
+                         origin='lower', interpolation='nearest')
         return fig, ax
