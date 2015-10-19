@@ -14,6 +14,13 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from PIL import Image
 import numpy as np
+
+# Use the 'agg' backend if on Linux
+import sys
+import matplotlib
+if 'linux' in sys.platform:
+    matplotlib.use('agg')
+
 import matplotlib.pyplot as plt
 from scipy.ndimage import filters
 
@@ -165,12 +172,19 @@ class Hologram(object):
         spectrum_centroid = self.find_fourier_peak_centroid(F_hologram)
 
         # Create mask based on coords of spectral peak:
-        mask_radius = 150/self.rebin_factor
+        mask_radius = 150./self.rebin_factor
         mask = self.generate_real_image_mask(spectrum_centroid[0],
                                              spectrum_centroid[1],
                                              mask_radius)
+
         # Calculate Fourier transform of impulse response function
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
+
+        # plt.imshow(np.log(np.abs(G)), interpolation='nearest')
+        # #plt.plot(spectrum_centroid[0], spectrum_centroid[1], 'o')
+        # plt.plot(self.n/2, self.n/2, 'bo')
+        # plt.title('G')
+        # plt.show()
 
         if self.reference_wave is None:
             # Center the spectral peak
@@ -179,8 +193,8 @@ class Hologram(object):
                                              self.n/2-spectrum_centroid[0]])
 
             # Apodize the result
-            #psi = self.apodize(shifted_F_hologram*G)
-            psi = shifted_F_hologram*G
+            psi = self.apodize(shifted_F_hologram*G)
+            #psi = shifted_F_hologram*G
 
             # Calculate reference wave
             reference_wave = self.calculate_digital_phase_mask(psi,
@@ -190,6 +204,7 @@ class Hologram(object):
         psi = G*shift_peak(np.fft.fft2(apodized_hologram*reference_wave)*mask,
                            [self.n/2 - spectrum_centroid[1],
                             self.n/2 - spectrum_centroid[0]])
+
         reconstructed_wavefield = shift_peak(np.fft.ifft2(psi),
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield, reference_wave
@@ -231,6 +246,7 @@ class Hologram(object):
         y, x = self.mgrid - self.n/2
         pixel_indices = x[0, self.edge_margin:-self.edge_margin]
         inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
+        #phase_image = np.arctan2(np.imag(inverse_psi),np.real(inverse_psi))
         phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
 
         phase_x = (np.unwrap(2*phase_image[self.background_rows,
@@ -424,6 +440,7 @@ class Hologram(object):
         margin = int(self.n*margin_factor)
         abs_fourier_arr = filters.gaussian_filter(np.abs(fourier_arr)[margin:-margin,
                                                   margin:-margin], 10)
+                                                  #margin:-margin], 2)
         spectrum_centroid = np.array(np.unravel_index(abs_fourier_arr.T.argmax(),
                                      abs_fourier_arr.shape)) + margin
 
@@ -451,34 +468,39 @@ class ReconstructedWavefield(object):
         self._phase_image = None
 
     @property
-    def intensity_image(self):
+    def intensity(self):
         if self._intensity_image is None:
             self._intensity_image = np.abs(self.reconstructed_wavefield)
         return self._intensity_image
 
     @property
-    def phase_image(self):
+    def phase(self):
         if self._phase_image is None:
+            # self._phase_image = np.arctan2(np.imag(self.reconstructed_wavefield),
+            #                                np.real(self.reconstructed_wavefield))
             self._phase_image = np.arctan(np.imag(self.reconstructed_wavefield)/
                                           np.real(self.reconstructed_wavefield))
+
         return self._phase_image
 
     def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r):
         if all is None:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.intensity_image[::-1,::-1], cmap=cmap,
+                ax.imshow(self.intensity[::-1,::-1], cmap=cmap,
                           origin='lower', interpolation='nearest')
                 plt.show()
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase_image[::-1,::-1], cmap=cmap,
+                ax.imshow(self.phase[::-1,::-1], cmap=cmap,
                           origin='lower', interpolation='nearest')
                 plt.show()
         else:
             fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True, sharey=True)
-            ax[0].imshow(self.intensity_image[::-1,::-1], cmap=cmap,
+            ax[0].imshow(self.intensity[::-1,::-1], cmap=cmap,
                          origin='lower', interpolation='nearest')
-            ax[1].imshow(self.phase_image[::-1,::-1], cmap=cmap,
+            ax[0].set(title='Intensity')
+            ax[1].imshow(self.phase[::-1,::-1], cmap=cmap,
                          origin='lower', interpolation='nearest')
+            ax[1].set(title='Phase')
         return fig, ax
