@@ -15,6 +15,8 @@ from __future__ import (absolute_import, division, print_function,
 from PIL import Image
 import numpy as np
 
+__all__ = ['Hologram', 'ReconstructedWavefield']
+
 # Use the 'agg' backend if on Linux
 import sys
 import matplotlib
