@@ -75,17 +75,24 @@ def make_items_hashable(input_iterable):
     return tuple([tuple(i) if isinstance(i, list) or isinstance(i, np.ndarray)
                   else i for i in input_iterable])
 
+def _load_hologram(hologram_path):
+    """
+    Load a hologram from path ``self.hologram_path`` using PIL and numpy.
+    """
+    return np.array(Image.open(hologram_path))
+
 class Hologram(object):
     """
     Container for holograms and their reference wavefields
     """
-    def __init__(self, hologram_path, wavelength=405e-9,
+    def __init__(self, hologram, wavelength=405e-9,
                  rebin_factor=1, dx=3.45e-6, dy=3.45e-6,
                  detector_edge_margin=0.15, background_interval=3):
         """
         Parameters
-        hologram_path : string
-            Path to input hologram to reconstruct
+        ----------
+        hologram : `~numpy.ndarray`
+            Input hologram
         wavelength : float [meters]
             Wavelength of laser
         rebin_factor : int
@@ -97,9 +104,8 @@ class Hologram(object):
         detector_edge_margin : float
             Fraction of total detector width to ignore on the edges
         """
-        self.hologram_path = hologram_path
         self.rebin_factor = rebin_factor
-        self.hologram = rebin_image(self._load_hologram(), self.rebin_factor)
+        self.hologram = rebin_image(hologram, self.rebin_factor)
         self.n = self.hologram.shape[0]
         self.reference_wave = None
         self.wavelength = wavelength
@@ -112,27 +118,48 @@ class Hologram(object):
         self.background_rows = np.arange(0, self.n, background_interval)
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
 
-    def _load_hologram(self):
+    @classmethod
+    def from_tif(cls, hologram_path, **kwargs):
         """
-        Load a hologram from path ``self.hologram_path`` using PIL and numpy.
+        Open a raw hologram from a tif file.
+
+        Parameters
+        ----------
+        hologram_path : string
+            Path to input hologram to reconstruct
+
+        Notes
+        -----
+        All keyword arguments get passed on to the `~shampoo.Hologram`
+        constructor.
         """
-        return np.array(Image.open(self.hologram_path))
+        hologram = _load_hologram(hologram_path)
+        return cls(hologram, **kwargs)
 
     def reconstruct(self, propagation_distance,
-                    plot_aberration_correction=False):
+                    plot_aberration_correction=False,
+                    cache=False):
+        if cache:
+            cache_key = make_items_hashable((propagation_distance, self.wavelength,
+                                             self.background_rows,
+                                             self.background_columns, self.dx,
+                                             self.dy, self.edge_margin))
 
-        cache_key = make_items_hashable((propagation_distance, self.wavelength,
-                                         self.background_rows,
-                                         self.background_columns, self.dx,
-                                         self.dy, self.edge_margin))
-        if cache_key not in self.reconstructions:
+        # If this reconstruction is cached, get it.
+        if cache and cache_key in self.reconstructions:
+            reconstructed_wavefield = self.reconstructions[cache_key]
+
+        # If this reconstruction is not in the cache,
+        # or if the cache is turned off, do the reconstruction
+        elif (cache and cache_key not in self.reconstructions) or not cache:
             reconstructed_wavefield, reference_wave = self.reconstruct_wavefield(propagation_distance,
                                                                                  plot_aberration_correction=plot_aberration_correction)
-            if self.reference_wave is None:
-                self.reference_wave = reference_wave
+
+        # If this reconstruction should be cached and it is not:
+        if cache and cache_key not in self.reconstructions:
             self.reconstructions[cache_key] = ReconstructedWavefield(reconstructed_wavefield)
 
-        return self.reconstructions[cache_key]
+        return ReconstructedWavefield(reconstructed_wavefield)
 
     def reconstruct_wavefield(self, propagation_distance,
                               plot_aberration_correction=False):
