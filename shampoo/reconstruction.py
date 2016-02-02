@@ -252,146 +252,6 @@ class Hologram(object):
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield
 
-    # def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
-    #                                  n_aberr_corr_iter=2):
-    #     """
-    #     Calculate the digital phase mask (i.e. reference wave), as in Colomb et
-    #     al. 2006, Eqn. 26 [1]_.
-    #
-    #     .. [1] http://www.ncbi.nlm.nih.gov/pubmed/16512526
-    #
-    #     Parameters
-    #     ----------
-    #     psi : ndarray
-    #         The product of the Fourier transform of the hologram and the Fourier
-    #         transform of impulse response function
-    #     wavelength : float
-    #         Wavelength of beam [m]
-    #     background_rows : list
-    #         Rows in the reconstructed image where there is no specimen
-    #     background_columns : list
-    #         Columns in the reconstructed image where there is no specimen
-    #     edge_margin : int
-    #         Margin from edges of detector to avoid
-    #     plots : bool
-    #         Display plots after calculation if `True`
-    #     aberr_corr_order : int
-    #         Polynomial order of the aberration corrections
-    #     n_aberr_corr_iter : int
-    #         Number of aberration correction iterations
-    #
-    #     Returns
-    #     -------
-    #     R : ndarray
-    #         Reference wave array
-    #     """
-    #     order = aberr_corr_order#3#2
-    #     y, x = self.mgrid - self.n/2
-    #     pixel_indices = x[0, self.edge_margin:-self.edge_margin]
-    #     inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
-    #     #phase_image = np.arctan2(np.imag(inverse_psi),np.real(inverse_psi))
-    #     phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
-    #
-    #     # phase_x = (np.unwrap(2*phase_image[self.background_rows,
-    #     #            self.edge_margin:-self.edge_margin])/2 /
-    #     #            self.wavenumber)
-    #     # phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
-    #     #            self.background_columns].T)/2/self.wavenumber)
-    #
-    #     phase_x = (unwrap_phase(2*phase_image[self.background_rows,
-    #                self.edge_margin:-self.edge_margin])/2 /
-    #                self.wavenumber)
-    #     phase_y = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
-    #                self.background_columns].T)/2/self.wavenumber)
-    #
-    #     if plots:
-    #         phase_x_before_median = phase_x.copy()
-    #         phase_y_before_median = phase_y.copy()
-    #
-    #     # Since you can't know which rows/cols are background rows/cols a
-    #     # priori, find the phase profiles along each row, fit polynomials to
-    #     # each, measure the rms error to the fit. Do a second fit excluding
-    #     # high error rows/cols and taking the median of the good ones.
-    #
-    #     # initial median fit to rows/cols
-    #     pxpoly_init = np.polyfit(pixel_indices, np.median(phase_x, axis=0),
-    #                              order)
-    #     pypoly_init = np.polyfit(pixel_indices, np.median(phase_y, axis=0),
-    #                              order)
-    #
-    #     # subtract each row by initial fit, take std to measure error
-    #     rms_x = np.std(np.polyval(pxpoly_init, pixel_indices)[:,np.newaxis] -
-    #                    phase_x.T, axis=0)
-    #     rms_y = np.std(np.polyval(pypoly_init, pixel_indices)[:,np.newaxis] -
-    #                    phase_y.T, axis=0)
-    #
-    #     x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
-    #                           0.5*np.std(rms_x))
-    #     y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
-    #                           0.5*np.std(rms_y))
-    #     # x_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
-    #     # y_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
-    #
-    #     # First fit to the median of only the typical rows/columns:
-    #     phase_x_background = np.median(phase_x[x_within_some_sigma], axis=0)
-    #     phase_y_background = np.median(phase_y[y_within_some_sigma], axis=0)
-    #     phase_x_polynomials = np.polyfit(pixel_indices, phase_x_background,
-    #                                      order)
-    #     phase_y_polynomials = np.polyfit(pixel_indices, phase_y_background,
-    #                                      order)
-    #
-    #     # Iterate to fit the median of typical rows/columns multiple times
-    #     background_x_polynomials = phase_x_polynomials.copy()
-    #     background_y_polynomials = phase_y_polynomials.copy()
-    #     for n in range(n_aberr_corr_iter):
-    #         background_x_polynomials += np.polyfit(pixel_indices,
-    #                                     phase_x_background -
-    #                                     np.polyval(background_x_polynomials,
-    #                                                pixel_indices),
-    #                                     order)
-    #         background_y_polynomials += np.polyfit(pixel_indices,
-    #                                     phase_y_background -
-    #                                     np.polyval(background_y_polynomials,
-    #                                                pixel_indices),
-    #                                     order)
-    #
-    #     digital_phase_mask = np.exp(-1j*self.wavenumber *
-    #                                 (np.polyval(background_x_polynomials, x) +
-    #                                  np.polyval(background_y_polynomials, y)))
-    #
-    #     if plots:
-    #         # tmp:
-    #         from astropy.io import fits
-    #         fits.writeto('/Users/bmorris/SHAMU/unwrappedphase.fits',
-    #                      phase_image, clobber=True)
-    #                      #np.unwrap(phase_image), clobber=True)
-    #
-    #         fig, ax = plt.subplots(1,3,figsize=(16,8))
-    #         ax[0].imshow(unwrap_phase(2*phase_image), origin='lower')
-    #         [ax[0].axhline(background_row)
-    #          for background_row in self.background_rows[x_within_some_sigma]]
-    #         [ax[0].axvline(background_column)
-    #          for background_column in self.background_columns[y_within_some_sigma]]
-    #
-    #         ax[1].plot(pixel_indices,
-    #                    phase_x_before_median[x_within_some_sigma].T *
-    #                    self.wavenumber)
-    #         ax[1].plot(pixel_indices,
-    #                    np.polyval(phase_x_polynomials, pixel_indices) *
-    #                    self.wavenumber, 'r', lw=4)
-    #         ax[1].set_title('rows (x)')
-    #
-    #         ax[2].plot(pixel_indices,
-    #                    phase_y_before_median[y_within_some_sigma].T *
-    #                    self.wavenumber)
-    #         ax[2].plot(pixel_indices,
-    #                    np.polyval(phase_y_polynomials, pixel_indices) *
-    #                    self.wavenumber, 'r', lw=4)
-    #         ax[2].set_title('cols (y)')
-    #         plt.show()
-    #
-    #     return digital_phase_mask
-
     def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
                                      n_aberr_corr_iter=2):
         """
@@ -425,48 +285,188 @@ class Hologram(object):
         R : ndarray
             Reference wave array
         """
+        order = aberr_corr_order#3#2
+        y, x = self.mgrid - self.n/2
+        pixel_indices = x[0, self.edge_margin:-self.edge_margin]
         inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
+        #phase_image = np.arctan2(np.imag(inverse_psi),np.real(inverse_psi))
         phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
-        phase_unwrapped = unwrap_phase(2*phase_image)/2/self.wavenumber
-        bin_down = 10
 
-        x = y = np.arange(self.n)
-        yy, xx = np.meshgrid(x, y)
-        xx_bin = xx[::bin_down, ::bin_down]
-        yy_bin = yy[::bin_down, ::bin_down]
+        # phase_x = (np.unwrap(2*phase_image[self.background_rows,
+        #            self.edge_margin:-self.edge_margin])/2 /
+        #            self.wavenumber)
+        # phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
+        #            self.background_columns].T)/2/self.wavenumber)
 
-        def polynomial_2d(p, xx=xx_bin, yy=yy_bin):
-            xx_c = xx - p[0]
-            yy_c = yy - p[1]
-            r = (p[2]*xx_c**2 + p[3]*yy_c**2 + p[4]*xx_c*yy_c + p[5]*xx_c +
-                 p[6]*yy_c + p[7])
-            return r
-
-        def residual_polynomial_2d(p):
-            return (phase_unwrapped[::bin_down, ::bin_down] -
-                    polynomial_2d(p)).flatten()
-
-        initp = [500, 500] + 6*[0.0]
-        results = optimize.leastsq(residual_polynomial_2d, initp)
-        best_parameters = results[0]
+        phase_x = (unwrap_phase(2*phase_image[self.background_rows,
+                   self.edge_margin:-self.edge_margin])/2 /
+                   self.wavenumber)
+        phase_y = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
+                   self.background_columns].T)/2/self.wavenumber)
 
         if plots:
+            phase_x_before_median = phase_x.copy()
+            phase_y_before_median = phase_y.copy()
 
-            fig, ax = plt.subplots(1, 3, figsize=(16, 6))
-            ax[0].imshow(phase_unwrapped, interpolation='nearest', origin='lower')
-            ax[0].set(title='Phase, unwrapped')
-            ax[1].imshow(polynomial_2d(best_parameters),
-                         interpolation='nearest', origin='lower')
-            ax[1].set(title='Best-fit polynomial')
-            ax[2].imshow(phase_unwrapped[::bin_down, ::bin_down] - polynomial_2d(best_parameters),
-                         interpolation='nearest', origin='lower')
-            ax[2].set(title='Residuals')
+        # Since you can't know which rows/cols are background rows/cols a
+        # priori, find the phase profiles along each row, fit polynomials to
+        # each, measure the rms error to the fit. Do a second fit excluding
+        # high error rows/cols and taking the median of the good ones.
+
+        # initial median fit to rows/cols
+        pxpoly_init = np.polyfit(pixel_indices, np.median(phase_x, axis=0),
+                                 order)
+        pypoly_init = np.polyfit(pixel_indices, np.median(phase_y, axis=0),
+                                 order)
+
+        # subtract each row by initial fit, take std to measure error
+        rms_x = np.std(np.polyval(pxpoly_init, pixel_indices)[:,np.newaxis] -
+                       phase_x.T, axis=0)
+        rms_y = np.std(np.polyval(pypoly_init, pixel_indices)[:,np.newaxis] -
+                       phase_y.T, axis=0)
+
+        x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
+                              0.5*np.std(rms_x))
+        y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
+                              0.5*np.std(rms_y))
+        # x_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
+        # y_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
+
+        # First fit to the median of only the typical rows/columns:
+        phase_x_background = np.median(phase_x[x_within_some_sigma], axis=0)
+        phase_y_background = np.median(phase_y[y_within_some_sigma], axis=0)
+        phase_x_polynomials = np.polyfit(pixel_indices, phase_x_background,
+                                         order)
+        phase_y_polynomials = np.polyfit(pixel_indices, phase_y_background,
+                                         order)
+
+        # Iterate to fit the median of typical rows/columns multiple times
+        background_x_polynomials = phase_x_polynomials.copy()
+        background_y_polynomials = phase_y_polynomials.copy()
+        for n in range(n_aberr_corr_iter):
+            background_x_polynomials += np.polyfit(pixel_indices,
+                                        phase_x_background -
+                                        np.polyval(background_x_polynomials,
+                                                   pixel_indices),
+                                        order)
+            background_y_polynomials += np.polyfit(pixel_indices,
+                                        phase_y_background -
+                                        np.polyval(background_y_polynomials,
+                                                   pixel_indices),
+                                        order)
+
+        digital_phase_mask = np.exp(-1j*self.wavenumber *
+                                    (np.polyval(background_x_polynomials, x) +
+                                     np.polyval(background_y_polynomials, y)))
+
+        if plots:
+            # tmp:
+            from astropy.io import fits
+            fits.writeto('/Users/bmorris/SHAMU/unwrappedphase.fits',
+                         phase_image, clobber=True)
+                         #np.unwrap(phase_image), clobber=True)
+
+            fig, ax = plt.subplots(1,3,figsize=(16,8))
+            ax[0].imshow(unwrap_phase(2*phase_image), origin='lower')
+            [ax[0].axhline(background_row)
+             for background_row in self.background_rows[x_within_some_sigma]]
+            [ax[0].axvline(background_column)
+             for background_column in self.background_columns[y_within_some_sigma]]
+
+            ax[1].plot(pixel_indices,
+                       phase_x_before_median[x_within_some_sigma].T *
+                       self.wavenumber)
+            ax[1].plot(pixel_indices,
+                       np.polyval(phase_x_polynomials, pixel_indices) *
+                       self.wavenumber, 'r', lw=4)
+            ax[1].set_title('rows (x)')
+
+            ax[2].plot(pixel_indices,
+                       phase_y_before_median[y_within_some_sigma].T *
+                       self.wavenumber)
+            ax[2].plot(pixel_indices,
+                       np.polyval(phase_y_polynomials, pixel_indices) *
+                       self.wavenumber, 'r', lw=4)
+            ax[2].set_title('cols (y)')
             plt.show()
 
-        digital_phase_mask = np.exp(-1j*self.wavenumber*
-                                     polynomial_2d(best_parameters, xx, yy))
-
         return digital_phase_mask
+
+    # def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
+    #                                  n_aberr_corr_iter=2):
+    #     """
+    #     Calculate the digital phase mask (i.e. reference wave), as in Colomb et
+    #     al. 2006, Eqn. 26 [1]_.
+    #
+    #     .. [1] http://www.ncbi.nlm.nih.gov/pubmed/16512526
+    #
+    #     Parameters
+    #     ----------
+    #     psi : ndarray
+    #         The product of the Fourier transform of the hologram and the Fourier
+    #         transform of impulse response function
+    #     wavelength : float
+    #         Wavelength of beam [m]
+    #     background_rows : list
+    #         Rows in the reconstructed image where there is no specimen
+    #     background_columns : list
+    #         Columns in the reconstructed image where there is no specimen
+    #     edge_margin : int
+    #         Margin from edges of detector to avoid
+    #     plots : bool
+    #         Display plots after calculation if `True`
+    #     aberr_corr_order : int
+    #         Polynomial order of the aberration corrections
+    #     n_aberr_corr_iter : int
+    #         Number of aberration correction iterations
+    #
+    #     Returns
+    #     -------
+    #     R : ndarray
+    #         Reference wave array
+    #     """
+    #     inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
+    #     phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
+    #     phase_unwrapped = unwrap_phase(2*phase_image)/2/self.wavenumber
+    #     bin_down = 10 #50#
+    #
+    #     x = y = np.arange(self.n)
+    #     yy, xx = np.meshgrid(x, y)
+    #     xx_bin = xx[::bin_down, ::bin_down]
+    #     yy_bin = yy[::bin_down, ::bin_down]
+    #
+    #     def polynomial_2d(p, xx=xx_bin, yy=yy_bin):
+    #         xx_c = xx - p[0]
+    #         yy_c = yy - p[1]
+    #         r = (p[2]*xx_c**2 + p[3]*yy_c**2 + p[4]*xx_c*yy_c + p[5]*xx_c +
+    #              p[6]*yy_c + p[7])
+    #         return r
+    #
+    #     def residual_polynomial_2d(p):
+    #         return (phase_unwrapped[::bin_down, ::bin_down] -
+    #                 polynomial_2d(p)).flatten()
+    #
+    #     initp = [500, 500] + 6*[0.0]
+    #     results = optimize.leastsq(residual_polynomial_2d, initp)
+    #     best_parameters = results[0]
+    #
+    #     if plots:
+    #
+    #         fig, ax = plt.subplots(1, 3, figsize=(16, 6))
+    #         ax[0].imshow(phase_unwrapped, interpolation='nearest', origin='lower')
+    #         ax[0].set(title='Phase, unwrapped')
+    #         ax[1].imshow(polynomial_2d(best_parameters),
+    #                      interpolation='nearest', origin='lower')
+    #         ax[1].set(title='Best-fit polynomial')
+    #         ax[2].imshow(phase_unwrapped[::bin_down, ::bin_down] - polynomial_2d(best_parameters),
+    #                      interpolation='nearest', origin='lower')
+    #         ax[2].set(title='Residuals')
+    #         plt.show()
+    #
+    #     digital_phase_mask = np.exp(-1j*self.wavenumber*
+    #                                  polynomial_2d(best_parameters, xx, yy))
+    #
+    #     return digital_phase_mask
 
     def apodize(self, arr):
         """
@@ -622,7 +622,6 @@ class ReconstructedWavefield(object):
 
         if all is None:
             if phase and not intensity:
-                plt.hist(self.phase.flatten(), 100)
                 fig, ax = plt.subplots(figsize=(10,10))
                 ax.imshow(self.phase[::-1,::-1], cmap=cmap,
                           origin='lower', interpolation='nearest',

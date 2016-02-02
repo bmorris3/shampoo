@@ -10,6 +10,7 @@ from PIL import Image
 import numpy as np
 import h5py
 import os
+from astropy.utils.console import ProgressBar
 
 __all__ = ['create_hdf5_archive', 'open_hdf5_archive']
 
@@ -18,7 +19,7 @@ def tiff_to_ndarray(path):
     return np.array(Image.open(path))
 
 def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
-                        compression='gzip', overwrite=False):
+                        compression='lzf', overwrite=False):
     """
     Create HDF5 file structure for holograms and phase/intensity
     reconstructions with the following format:
@@ -62,11 +63,14 @@ def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
     f['holograms'].attrs.update(metadata)
 
     holograms_dset = f['holograms']
-    for i, path in enumerate(hologram_paths):
-        holograms_dset[i, :, :] = tiff_to_ndarray(path)
+    print('Loading holograms into file {0}...'.format(hdf5_path))
+    with ProgressBar(len(hologram_paths)) as bar:
+        for i, path in enumerate(hologram_paths):
+            holograms_dset[i, :, :] = tiff_to_ndarray(path)
+            bar.update()
 
     # Create empty datasets for reconstructions
-    reconstruction_dtype = np.float64
+    reconstruction_dtype = np.complex128
     f.create_dataset('reconstructed_wavefields', dtype=reconstruction_dtype,
                      shape=(len(hologram_paths), n_z,
                             first_image.shape[0], first_image.shape[1]),
@@ -88,5 +92,5 @@ def open_hdf5_archive(hdf5_path):
     f : `~h5py.File`
         Opened HDF5 file
     """
-    return h5py.File(hdf5_path, 'r')
+    return h5py.File(hdf5_path, 'r+')
 
