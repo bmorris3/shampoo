@@ -75,7 +75,6 @@ def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
                      shape=(len(hologram_paths), n_z,
                             first_image.shape[0], first_image.shape[1]),
                      compression=compression)
-
     return f
 
 def open_hdf5_archive(hdf5_path):

@@ -20,10 +20,10 @@ from scipy import optimize
 __all__ = ['Hologram', 'ReconstructedWavefield']
 
 # Use the 'agg' backend if on Linux
-import sys
-import matplotlib
-if 'linux' in sys.platform:
-    matplotlib.use('agg')
+#import sys
+#import matplotlib
+#if 'linux' in sys.platform:
+#    matplotlib.use('agg')
 
 import matplotlib.pyplot as plt
 from scipy.ndimage import filters
@@ -289,20 +289,22 @@ class Hologram(object):
         y, x = self.mgrid - self.n/2
         pixel_indices = x[0, self.edge_margin:-self.edge_margin]
         inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
-        #phase_image = np.arctan2(np.imag(inverse_psi),np.real(inverse_psi))
-        phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
+        phase_image = np.arctan2(np.imag(inverse_psi), np.real(inverse_psi))
+        #phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
 
-        # phase_x = (np.unwrap(2*phase_image[self.background_rows,
-        #            self.edge_margin:-self.edge_margin])/2 /
-        #            self.wavenumber)
-        # phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
-        #            self.background_columns].T)/2/self.wavenumber)
+
+
+#        phase_x = (np.unwrap(2*phase_image[self.background_rows,
+#                   self.edge_margin:-self.edge_margin])/2 /
+#                   self.wavenumber)
+#        phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
+#                   self.background_columns].T)/2/self.wavenumber)
 
         phase_x = (unwrap_phase(2*phase_image[self.background_rows,
-                   self.edge_margin:-self.edge_margin])/2 /
-                   self.wavenumber)
+                    self.edge_margin:-self.edge_margin])/2 /
+                    self.wavenumber)
         phase_y = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
-                   self.background_columns].T)/2/self.wavenumber)
+                    self.background_columns].T)/2/self.wavenumber)
 
         if plots:
             phase_x_before_median = phase_x.copy()
@@ -366,6 +368,7 @@ class Hologram(object):
                          phase_image, clobber=True)
                          #np.unwrap(phase_image), clobber=True)
 
+
             fig, ax = plt.subplots(1,3,figsize=(16,8))
             ax[0].imshow(unwrap_phase(2*phase_image), origin='lower')
             [ax[0].axhline(background_row)
@@ -428,7 +431,7 @@ class Hologram(object):
     #     inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
     #     phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
     #     phase_unwrapped = unwrap_phase(2*phase_image)/2/self.wavenumber
-    #     bin_down = 10 #50#
+    #     bin_down = 10
     #
     #     x = y = np.arange(self.n)
     #     yy, xx = np.meshgrid(x, y)
@@ -609,21 +612,41 @@ class ReconstructedWavefield(object):
     @property
     def phase(self):
         if self._phase_image is None:
-            # self._phase_image = np.arctan2(np.imag(self.reconstructed_wavefield),
-            #                                np.real(self.reconstructed_wavefield))
-            self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
-                                             np.real(self.reconstructed_wavefield)))
+            self._phase_image = np.arctan2(np.imag(self.reconstructed_wavefield),
+                                           np.real(self.reconstructed_wavefield))
+            # self._phase_image = np.arctan(np.imag(self.reconstructed_wavefield)/
+            #                                  np.real(self.reconstructed_wavefield))
+            # self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
+            #                                  np.real(self.reconstructed_wavefield)))
 
         return self._phase_image
 
-    def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r):
+    @property
+    def phase_wrap_correct(self):
+        fold_on_pi = self.phase % np.pi
+        fold_on_pi_ravel = (self.phase % np.pi).ravel()
 
+        width = np.pi/8
+        if (np.sum((fold_on_pi_ravel > np.pi/2 - width) & 
+                  (fold_on_pi_ravel < np.pi/2 + width)) < 0.5*len(fold_on_pi_ravel)):
+            phase_corrected = ((self.phase+np.pi/2) % np.pi) - np.pi/2
+        else:
+            phase_corrected = fold_on_pi - np.pi/2
+        return phase_corrected
+
+    def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r, correct_phase=False):
+
+        if correct_phase: 
+            phase_array = self.phase_wrap_correct
+        else:
+            phase_array = self.phase
+            
         phase_kwargs = {}
 
         if all is None:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1,::-1], cmap=cmap,
+                ax.imshow(phase_array[::-1,::-1], cmap=cmap,
                           origin='lower', interpolation='nearest',
                           **phase_kwargs)
             elif intensity and not phase:
@@ -635,7 +658,7 @@ class ReconstructedWavefield(object):
             ax[0].imshow(self.intensity[::-1,::-1], cmap=cmap,
                          origin='lower', interpolation='nearest')
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1,::-1], cmap=cmap,
+            ax[1].imshow(phase_array[::-1,::-1], cmap=cmap,
                          origin='lower', interpolation='nearest',
                           **phase_kwargs)
             ax[1].set(title='Phase')
