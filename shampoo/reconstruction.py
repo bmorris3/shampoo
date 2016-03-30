@@ -15,8 +15,11 @@ from __future__ import (absolute_import, division, print_function,
 from PIL import Image
 import numpy as np
 from skimage.restoration import unwrap_phase
-from scipy.fftpack import fft2, ifft2
-from scipy import optimize
+
+try:
+    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
+except ImportError:
+    from scipy.fftpack import fft2, ifft2
 
 __all__ = ['Hologram', 'ReconstructedWavefield']
 
@@ -34,10 +37,12 @@ RANDOM_SEED = 42
 
 def rebin_image(a, binning_factor):
     # Courtesy of J.F. Sebastian: http://stackoverflow.com/a/8090605
+    if binning_factor == 1:
+        return a
+
     new_shape = (a.shape[0]/binning_factor, a.shape[1]/binning_factor)
     sh = (new_shape[0], a.shape[0]//new_shape[0], new_shape[1],
           a.shape[1]//new_shape[1])
-    #return a.reshape(sh).sum(-1).sum(1)
     return a.reshape(sh).mean(-1).mean(1)
 
 
@@ -65,6 +70,7 @@ def shift_peak(arr, shifts_xy):
     return np.roll(np.roll(arr, int(shifts_xy[0]), axis=0),
                    int(shifts_xy[1]), axis=1)
 
+
 def make_items_hashable(input_iterable):
     """
     Take a list or tuple of objects, convert any items that are lists into
@@ -83,11 +89,13 @@ def make_items_hashable(input_iterable):
     return tuple([tuple(i) if isinstance(i, list) or isinstance(i, np.ndarray)
                   else i for i in input_iterable])
 
+
 def _load_hologram(hologram_path):
     """
     Load a hologram from path ``self.hologram_path`` using PIL and numpy.
     """
-    return np.array(Image.open(hologram_path))
+    return np.array(Image.open(hologram_path), dtype=np.float64)
+
 
 class Hologram(object):
     """
@@ -157,7 +165,6 @@ class Hologram(object):
             If one has been calculated, you can give a reference wave
             to use.
         """
-
         self.reference_wave = reference_wave
 
         if cache:
@@ -299,12 +306,6 @@ class Hologram(object):
         #phase_image = np.arctan2(np.imag(inverse_psi), np.real(inverse_psi))
         phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
 
-        # phase_x = (np.unwrap(2*phase_image[self.background_rows,
-        #            self.edge_margin:-self.edge_margin])/2 /
-        #            self.wavenumber)
-        # phase_y = (np.unwrap(2*phase_image[self.edge_margin:-self.edge_margin,
-        #            self.background_columns].T)/2/self.wavenumber)
-
         phase_x = (unwrap_phase(2*phase_image[self.background_rows,
                                               self.edge_margin:-self.edge_margin],
                                 seed=self.random_seed) /
@@ -337,11 +338,9 @@ class Hologram(object):
                        phase_y.T, axis=0)
 
         x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
-                              0.5*np.std(rms_x))
+                               0.5*np.std(rms_x))
         y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
-                              0.5*np.std(rms_y))
-        # x_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
-        # y_within_some_sigma = np.ones_like(phase_x.T).astype(bool)
+                               0.5*np.std(rms_y))
 
         # First fit to the median of only the typical rows/columns:
         phase_x_background = np.median(phase_x[x_within_some_sigma], axis=0)
@@ -404,82 +403,6 @@ class Hologram(object):
 
         return digital_phase_mask
 
-    # def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
-    #                                  n_aberr_corr_iter=2):
-    #     """
-    #     Calculate the digital phase mask (i.e. reference wave), as in Colomb et
-    #     al. 2006, Eqn. 26 [1]_.
-    #
-    #     .. [1] http://www.ncbi.nlm.nih.gov/pubmed/16512526
-    #
-    #     Parameters
-    #     ----------
-    #     psi : ndarray
-    #         The product of the Fourier transform of the hologram and the Fourier
-    #         transform of impulse response function
-    #     wavelength : float
-    #         Wavelength of beam [m]
-    #     background_rows : list
-    #         Rows in the reconstructed image where there is no specimen
-    #     background_columns : list
-    #         Columns in the reconstructed image where there is no specimen
-    #     edge_margin : int
-    #         Margin from edges of detector to avoid
-    #     plots : bool
-    #         Display plots after calculation if `True`
-    #     aberr_corr_order : int
-    #         Polynomial order of the aberration corrections
-    #     n_aberr_corr_iter : int
-    #         Number of aberration correction iterations
-    #
-    #     Returns
-    #     -------
-    #     R : ndarray
-    #         Reference wave array
-    #     """
-    #     inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
-    #     phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
-    #     phase_unwrapped = unwrap_phase(2*phase_image)/2/self.wavenumber
-    #     bin_down = 10 #50#
-    #
-    #     x = y = np.arange(self.n)
-    #     yy, xx = np.meshgrid(x, y)
-    #     xx_bin = xx[::bin_down, ::bin_down]
-    #     yy_bin = yy[::bin_down, ::bin_down]
-    #
-    #     def polynomial_2d(p, xx=xx_bin, yy=yy_bin):
-    #         xx_c = xx - p[0]
-    #         yy_c = yy - p[1]
-    #         r = (p[2]*xx_c**2 + p[3]*yy_c**2 + p[4]*xx_c*yy_c + p[5]*xx_c +
-    #              p[6]*yy_c + p[7])
-    #         return r
-    #
-    #     def residual_polynomial_2d(p):
-    #         return (phase_unwrapped[::bin_down, ::bin_down] -
-    #                 polynomial_2d(p)).flatten()
-    #
-    #     initp = [500, 500] + 6*[0.0]
-    #     results = optimize.leastsq(residual_polynomial_2d, initp)
-    #     best_parameters = results[0]
-    #
-    #     if plots:
-    #
-    #         fig, ax = plt.subplots(1, 3, figsize=(16, 6))
-    #         ax[0].imshow(phase_unwrapped, interpolation='nearest', origin='lower')
-    #         ax[0].set(title='Phase, unwrapped')
-    #         ax[1].imshow(polynomial_2d(best_parameters),
-    #                      interpolation='nearest', origin='lower')
-    #         ax[1].set(title='Best-fit polynomial')
-    #         ax[2].imshow(phase_unwrapped[::bin_down, ::bin_down] - polynomial_2d(best_parameters),
-    #                      interpolation='nearest', origin='lower')
-    #         ax[2].set(title='Residuals')
-    #         plt.show()
-    #
-    #     digital_phase_mask = np.exp(-1j*self.wavenumber*
-    #                                  polynomial_2d(best_parameters, xx, yy))
-    #
-    #     return digital_phase_mask
-
     def apodize(self, arr):
         """
         Force the magnitude at the boundaries go to zero
@@ -494,10 +417,6 @@ class Hologram(object):
         apodized_arr : ndarray
             Apodized array
         """
-        # y, x = self.mgrid
-        # suppression_exponent = 0.4
-        # arr *= (np.cos((x-self.n/2.)*np.pi/self.n)**suppression_exponent *
-        #         np.cos((y-self.n/2.)*np.pi/self.n)**suppression_exponent)
         y, x = self.mgrid
         arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
                 np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
@@ -605,6 +524,7 @@ class Hologram(object):
             plt.show()
         return spectrum_centroid
 
+
 class ReconstructedWavefield(object):
     """
     Container for reconstructed wavefields and their intensity and phase
@@ -625,9 +545,6 @@ class ReconstructedWavefield(object):
     @property
     def phase(self):
         if self._phase_image is None:
-            # self._phase_image = np.arctan2(np.imag(self.reconstructed_wavefield),
-            #                                np.real(self.reconstructed_wavefield))
-
             self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
                                              np.real(self.reconstructed_wavefield)),
                                              seed=self.random_seed)
@@ -658,14 +575,4 @@ class ReconstructedWavefield(object):
                           **phase_kwargs)
             ax[1].set(title='Phase')
         return fig, ax
-
-# import numpy as np
-# cmap = plt.cm.binary_r
-# fig, ax = plt.subplots(figsize=(10, 10))
-# ax.imshow(waveform.phase[::-1,::-1], cmap=cmap,
-#           origin='lower', interpolation='nearest',
-#           vmin=0.2,#np.percentile(waveform.phase, 0.5),
-#           vmax=1.3)#np.percentile(waveform.phase, 99.5))
-# plt.show()
-#
 
