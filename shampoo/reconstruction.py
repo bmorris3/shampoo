@@ -15,6 +15,7 @@ from __future__ import (absolute_import, division, print_function,
 from PIL import Image
 import numpy as np
 from skimage.restoration import unwrap_phase
+from scipy.fftpack import fft2, ifft2
 from scipy import optimize
 
 __all__ = ['Hologram', 'ReconstructedWavefield']
@@ -28,12 +29,17 @@ if 'linux' in sys.platform:
 import matplotlib.pyplot as plt
 from scipy.ndimage import filters
 
+RANDOM_SEED = 42
+
+
 def rebin_image(a, binning_factor):
     # Courtesy of J.F. Sebastian: http://stackoverflow.com/a/8090605
     new_shape = (a.shape[0]/binning_factor, a.shape[1]/binning_factor)
     sh = (new_shape[0], a.shape[0]//new_shape[0], new_shape[1],
           a.shape[1]//new_shape[1])
+    #return a.reshape(sh).sum(-1).sum(1)
     return a.reshape(sh).mean(-1).mean(1)
+
 
 def shift_peak(arr, shifts_xy):
     """
@@ -118,6 +124,7 @@ class Hologram(object):
         self.background_columns = np.arange(0, self.n, background_interval)
         self.background_rows = np.arange(0, self.n, background_interval)
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
+        self.random_seed = RANDOM_SEED
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
@@ -210,7 +217,7 @@ class Hologram(object):
         apodized_hologram = self.apodize(self.hologram)
 
         # Isolate the real image in Fourier space, find spectral peak
-        F_hologram = np.fft.fft2(apodized_hologram)
+        F_hologram = fft2(apodized_hologram)
         spectrum_centroid = self.find_fourier_peak_centroid(F_hologram,
                                                             plot=plot_fourier_peak)
 
@@ -244,11 +251,11 @@ class Hologram(object):
                                                                     plots=plot_aberration_correction)
 
         # Reconstruct the image
-        psi = G*shift_peak(np.fft.fft2(apodized_hologram*self.reference_wave)*mask,
+        psi = G*shift_peak(fft2(apodized_hologram*self.reference_wave)*mask,
                            [self.n/2 - spectrum_centroid[1],
                             self.n/2 - spectrum_centroid[0]])
 
-        reconstructed_wavefield = shift_peak(np.fft.ifft2(psi),
+        reconstructed_wavefield = shift_peak(ifft2(psi),
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield
 
@@ -288,8 +295,8 @@ class Hologram(object):
         order = aberr_corr_order#3#2
         y, x = self.mgrid - self.n/2
         pixel_indices = x[0, self.edge_margin:-self.edge_margin]
-        inverse_psi = shift_peak(np.fft.ifft2(psi), [self.n/2, self.n/2])
-        #phase_image = np.arctan2(np.imag(inverse_psi),np.real(inverse_psi))
+        inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
+        #phase_image = np.arctan2(np.imag(inverse_psi), np.real(inverse_psi))
         phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
 
         # phase_x = (np.unwrap(2*phase_image[self.background_rows,
@@ -299,10 +306,14 @@ class Hologram(object):
         #            self.background_columns].T)/2/self.wavenumber)
 
         phase_x = (unwrap_phase(2*phase_image[self.background_rows,
-                   self.edge_margin:-self.edge_margin])/2 /
-                   self.wavenumber)
+                                              self.edge_margin:-self.edge_margin],
+                                seed=self.random_seed) /
+                   2/self.wavenumber)
+
         phase_y = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
-                   self.background_columns].T)/2/self.wavenumber)
+                                              self.background_columns].T,
+                                seed=self.random_seed) /
+                   2/self.wavenumber)
 
         if plots:
             phase_x_before_median = phase_x.copy()
@@ -361,13 +372,14 @@ class Hologram(object):
 
         if plots:
             # tmp:
-            from astropy.io import fits
-            fits.writeto('/Users/bmorris/SHAMU/unwrappedphase.fits',
-                         phase_image, clobber=True)
-                         #np.unwrap(phase_image), clobber=True)
+            # from astropy.io import fits
+            # fits.writeto('/Users/bmmorris/SHAMU/unwrappedphase.fits',
+            #             phase_image, clobber=True)
+            #             #np.unwrap(phase_image), clobber=True)
 
             fig, ax = plt.subplots(1,3,figsize=(16,8))
-            ax[0].imshow(unwrap_phase(2*phase_image), origin='lower')
+            ax[0].imshow(unwrap_phase(2*phase_image, seed=self.random_seed),
+                         origin='lower')
             [ax[0].axhline(background_row)
              for background_row in self.background_rows[x_within_some_sigma]]
             [ax[0].axvline(background_column)
@@ -482,10 +494,13 @@ class Hologram(object):
         apodized_arr : ndarray
             Apodized array
         """
+        # y, x = self.mgrid
+        # suppression_exponent = 0.4
+        # arr *= (np.cos((x-self.n/2.)*np.pi/self.n)**suppression_exponent *
+        #         np.cos((y-self.n/2.)*np.pi/self.n)**suppression_exponent)
         y, x = self.mgrid
-        suppression_exponent = 0.4
-        arr *= (np.cos((x-self.n/2.)*np.pi/self.n)**suppression_exponent *
-                np.cos((y-self.n/2.)*np.pi/self.n)**suppression_exponent)
+        arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
+                np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
         return arr
 
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
@@ -599,6 +614,7 @@ class ReconstructedWavefield(object):
         self.reconstructed_wavefield = reconstructed_wavefield
         self._intensity_image = None
         self._phase_image = None
+        self.random_seed = RANDOM_SEED
 
     @property
     def intensity(self):
@@ -611,8 +627,10 @@ class ReconstructedWavefield(object):
         if self._phase_image is None:
             # self._phase_image = np.arctan2(np.imag(self.reconstructed_wavefield),
             #                                np.real(self.reconstructed_wavefield))
+
             self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
-                                             np.real(self.reconstructed_wavefield)))
+                                             np.real(self.reconstructed_wavefield)),
+                                             seed=self.random_seed)
 
         return self._phase_image
 
