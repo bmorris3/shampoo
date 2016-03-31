@@ -120,8 +120,9 @@ class Hologram(object):
         dy: float [meters]
             Pixel width in y-direction (unbinned)
         """
+
         self.rebin_factor = rebin_factor
-        self.hologram = rebin_image(hologram, self.rebin_factor)
+        self.hologram = rebin_image(np.float64(hologram), self.rebin_factor)
         self.n = self.hologram.shape[0]
         self.wavelength = wavelength
         self.wavenumber = 2*np.pi/self.wavelength
@@ -246,6 +247,7 @@ class Hologram(object):
 
         # Reconstruct the image
         psi = G*shift_peak(fft2(apodized_hologram*self.reference_wave)*mask,
+        # psi = G*shift_peak(fft2(apodized_hologram)*mask,
                            [self.n/2 - spectrum_centroid[1],
                             self.n/2 - spectrum_centroid[0]])
 
@@ -253,8 +255,7 @@ class Hologram(object):
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield
 
-    def get_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
-                               n_aberr_corr_iter=2):
+    def get_digital_phase_mask(self, psi, plots=False):
         """
         Calculate the digital phase mask (i.e. reference wave), as in Colomb et
         al. 2006, Eqn. 26 [1]_.
@@ -268,78 +269,34 @@ class Hologram(object):
             transform of impulse response function
         plots : bool
             Display plots after calculation if `True`
-        aberr_corr_order : int
-            Polynomial order of the aberration corrections
-        n_aberr_corr_iter : int
-            Number of aberration correction iterations
 
         Returns
         -------
         R : ndarray
             Reference wave array
         """
-        order = aberr_corr_order #3#2
-
         y, x = self.mgrid - self.n/2
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
-        phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
+        phase_image = np.arctan(np.imag(inverse_psi)/np.real(inverse_psi))
         unwrapped_phase_image = unwrap_phase(2*phase_image,
                                              seed=self.random_seed)/2/self.wavenumber
         unwrapped_phase_image = gaussian_filter(unwrapped_phase_image, 3)
 
-        grad_x_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=0)), axis=1)
-        grad_y_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=1)), axis=1)
+        smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
 
-        n_rows_or_cols = 100
-        least_noisy_x_indices = grad_x_2.argsort()[:n_rows_or_cols]
-        least_noisy_y_indices = grad_y_2.argsort()[:n_rows_or_cols]
+        v = np.array([np.ones(len(x[0, :])), x[0, :], y[:, 0], x[0, :]**2,
+                      x[0, :] * y[:, 0], y[:, 0]**2])
+        coefficients, residues, rank, singval = np.linalg.lstsq(v.T, smooth_phase_image)
+        fit_surface2 = np.dot(v.T, coefficients)
 
-        # Compute the smoothed mean phase in the background along each axis
-        phase_x_bg = np.mean(unwrapped_phase_image[:, least_noisy_x_indices], axis=1)
-        phase_y_bg = np.mean(unwrapped_phase_image[least_noisy_y_indices, :].T, axis=1)
-        phase_x_bg_smooth = gaussian_filter1d(phase_x_bg, 50)
-        phase_y_bg_smooth = gaussian_filter1d(phase_y_bg, 50)
-
-        pixel_indices = x[0, :]
-        phase_x_polynomials = np.polyfit(pixel_indices, phase_x_bg_smooth,
-                                         order)
-        phase_y_polynomials = np.polyfit(pixel_indices, phase_y_bg_smooth,
-                                         order)
-
-        # Iterate to fit the median of typical rows/columns multiple times
-        background_x_polynomials = phase_x_polynomials.copy()
-        background_y_polynomials = phase_y_polynomials.copy()
-        for n in range(n_aberr_corr_iter):
-            background_x_polynomials += np.polyfit(pixel_indices,
-                                                   phase_x_bg_smooth -
-                                                   np.polyval(background_x_polynomials,
-                                                              pixel_indices), order)
-            background_y_polynomials += np.polyfit(pixel_indices,
-                                                   phase_y_bg_smooth -
-                                                   np.polyval(background_y_polynomials,
-                                                              pixel_indices), order)
-
-        digital_phase_mask = np.exp(-1j*self.wavenumber *
-                                    (np.polyval(background_x_polynomials, x) +
-                                     np.polyval(background_y_polynomials, y)))
+        digital_phase_mask = np.exp(-1j*self.wavenumber * fit_surface2)
 
         if plots:
-            fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-            ax[0, 0].plot(grad_x_2)
-            ax[1, 0].imshow(unwrapped_phase_image,
-                            cmap=plt.cm.binary_r, origin='lower')
-            ax[1, 1].plot(grad_y_2, range(len(grad_y_2)))
-            ax[1, 1].set(ylim=(0, len(grad_y_2)))
-            ax[0, 0].set(xlim=(0, len(grad_x_2)))
-
-            for x_i, y_i in zip(least_noisy_x_indices, least_noisy_y_indices):
-                ax[0, 0].axvline(x_i, color='m', alpha=0.4, ls=':')
-                ax[1, 1].axhline(y_i, color='m', alpha=0.4, ls=':')
-
-                ax[1, 0].axvline(x_i, color='m', alpha=0.4, ls=':')
-                ax[1, 0].axhline(y_i, color='m', alpha=0.4, ls=':')
+            fig, ax = plt.subplots(1, 2, figsize=(14, 8))
+            ax[0].imshow(unwrapped_phase_image, origin='lower')
+            ax[1].imshow(fit_surface2, origin='lower')
             plt.show()
 
         return digital_phase_mask
@@ -494,25 +451,26 @@ class ReconstructedWavefield(object):
 
     def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r):
 
-        phase_kwargs = {}
+        phase_kwargs = dict(vmin=np.percentile(self.phase, 1),
+                            vmax=np.percentile(self.phase, 99))
 
         if all is None:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1,::-1], cmap=cmap,
+                ax.imshow(self.phase[::-1, ::-1], cmap=cmap,
                           origin='lower', interpolation='nearest',
                           **phase_kwargs)
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.intensity[::-1,::-1], cmap=cmap,
+                ax.imshow(self.intensity[::-1, ::-1], cmap=cmap,
                           origin='lower', interpolation='nearest')
         else:
             fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True, sharey=True)
-            ax[0].imshow(self.intensity[::-1,::-1], cmap=cmap,
+            ax[0].imshow(self.intensity[::-1, ::-1], cmap=cmap,
                          origin='lower', interpolation='nearest')
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1,::-1], cmap=cmap,
+            ax[1].imshow(self.phase[::-1, ::-1], cmap=cmap,
                          origin='lower', interpolation='nearest',
-                          **phase_kwargs)
+                         **phase_kwargs)
             ax[1].set(title='Phase')
         return fig, ax
