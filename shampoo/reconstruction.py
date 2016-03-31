@@ -15,8 +15,16 @@ from __future__ import (absolute_import, division, print_function,
 from PIL import Image
 import numpy as np
 from scipy.ndimage import gaussian_filter1d, gaussian_filter
+from scipy.ndimage import filters
+
 from skimage.restoration import unwrap_phase
 from skimage.filters.rank import noise_filter
+# Use the 'agg' backend if on Linux
+import sys
+import matplotlib
+import matplotlib.pyplot as plt
+if 'linux' in sys.platform:
+    matplotlib.use('agg')
 
 try:
     from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
@@ -25,14 +33,6 @@ except ImportError:
 
 __all__ = ['Hologram', 'ReconstructedWavefield']
 
-# Use the 'agg' backend if on Linux
-import sys
-import matplotlib
-if 'linux' in sys.platform:
-    matplotlib.use('agg')
-
-import matplotlib.pyplot as plt
-from scipy.ndimage import filters
 
 RANDOM_SEED = 42
 
@@ -105,7 +105,7 @@ class Hologram(object):
     """
     def __init__(self, hologram, wavelength=405e-9,
                  rebin_factor=1, dx=3.45e-6, dy=3.45e-6,
-                 detector_edge_margin=0.15, background_interval=3):
+                 background_interval=3):
         """
         Parameters
         ----------
@@ -119,8 +119,6 @@ class Hologram(object):
             Pixel width in x-direction (unbinned)
         dy: float [meters]
             Pixel width in y-direction (unbinned)
-        detector_edge_margin : float
-            Fraction of total detector width to ignore on the edges
         """
         self.rebin_factor = rebin_factor
         self.hologram = rebin_image(hologram, self.rebin_factor)
@@ -130,9 +128,6 @@ class Hologram(object):
         self.reconstructions = dict()
         self.dx = dx*rebin_factor
         self.dy = dy*rebin_factor
-        self.edge_margin = int(self.n/rebin_factor*detector_edge_margin)
-        self.background_columns = np.arange(0, self.n, background_interval)
-        self.background_rows = np.arange(0, self.n, background_interval)
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
         self.random_seed = RANDOM_SEED
 
@@ -170,10 +165,8 @@ class Hologram(object):
         self.reference_wave = reference_wave
 
         if cache:
-            cache_key = make_items_hashable((propagation_distance, self.wavelength,
-                                             self.background_rows,
-                                             self.background_columns, self.dx,
-                                             self.dy, self.edge_margin))
+            cache_key = make_items_hashable((propagation_distance,
+                                             self.wavelength, self.dx, self.dy))
 
         # If this reconstruction is cached, get it.
         if cache and cache_key in self.reconstructions:
@@ -208,14 +201,6 @@ class Hologram(object):
         R : ndarray or `None` (optional)
             If `None`, compute the reference wave, else use array as reference wave
             array for reconstruction
-        wavelength : float
-            Wavelength of beam [m]
-        background_rows : list
-            Rows in the reconstructed image where there is no specimen
-        background_columns : list
-            Columns in the reconstructed image where there is no specimen
-        edge_margin : int
-            Margin from edges of detector to avoid
 
         Returns
         -------
@@ -256,8 +241,8 @@ class Hologram(object):
             #psi = shifted_F_hologram*G
 
             # Calculate reference wave
-            self.reference_wave = self.calculate_digital_phase_mask(psi,
-                                                                    plots=plot_aberration_correction)
+            self.reference_wave = self.get_digital_phase_mask(psi,
+                                                              plots=plot_aberration_correction)
 
         # Reconstruct the image
         psi = G*shift_peak(fft2(apodized_hologram*self.reference_wave)*mask,
@@ -268,8 +253,8 @@ class Hologram(object):
                                              [self.n/2, self.n/2])
         return reconstructed_wavefield
 
-    def calculate_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
-                                     n_aberr_corr_iter=2):
+    def get_digital_phase_mask(self, psi, plots=False, aberr_corr_order=3,
+                               n_aberr_corr_iter=2):
         """
         Calculate the digital phase mask (i.e. reference wave), as in Colomb et
         al. 2006, Eqn. 26 [1]_.
@@ -281,14 +266,6 @@ class Hologram(object):
         psi : ndarray
             The product of the Fourier transform of the hologram and the Fourier
             transform of impulse response function
-        wavelength : float
-            Wavelength of beam [m]
-        background_rows : list
-            Rows in the reconstructed image where there is no specimen
-        background_columns : list
-            Columns in the reconstructed image where there is no specimen
-        edge_margin : int
-            Margin from edges of detector to avoid
         plots : bool
             Display plots after calculation if `True`
         aberr_corr_order : int
@@ -302,216 +279,68 @@ class Hologram(object):
             Reference wave array
         """
         order = aberr_corr_order #3#2
+
         y, x = self.mgrid - self.n/2
-        #pixel_indices = x[0, self.edge_margin:-self.edge_margin]
+
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
-        #phase_image = np.arctan2(np.imag(inverse_psi), np.real(inverse_psi))
+
         phase_image = np.arctan(np.imag(inverse_psi) / np.real(inverse_psi))
-        unwrapped_phase_image = unwrap_phase(2*phase_image, seed=self.random_seed)/2/self.wavenumber
+        unwrapped_phase_image = unwrap_phase(2*phase_image,
+                                             seed=self.random_seed)/2/self.wavenumber
         unwrapped_phase_image = gaussian_filter(unwrapped_phase_image, 3)
-        # phase_x = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
-        #                                       self.edge_margin:-self.edge_margin],
-        #                         seed=self.random_seed) /2/self.wavenumber)
-        #
-        # phase_y = (unwrap_phase(2*phase_image[self.edge_margin:-self.edge_margin,
-        #                                       self.edge_margin:-self.edge_margin].T,
-        #                         seed=self.random_seed) /2/self.wavenumber)
 
-        # if plots:
-        #     phase_x_before_median = phase_x.copy()
-        #     phase_y_before_median = phase_y.copy()
-
-        # grad_x_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=0)), axis=1)
-        # grad_y_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=1)), axis=1)
-        grad_x_2 = np.sum(np.diff(unwrapped_phase_image, axis=0), axis=1)
-        grad_y_2 = np.sum(np.diff(unwrapped_phase_image, axis=1), axis=1)
+        grad_x_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=0)), axis=1)
+        grad_y_2 = np.sum(np.abs(np.diff(unwrapped_phase_image, axis=1)), axis=1)
 
         n_rows_or_cols = 100
         least_noisy_x_indices = grad_x_2.argsort()[:n_rows_or_cols]
         least_noisy_y_indices = grad_y_2.argsort()[:n_rows_or_cols]
 
-        fig, ax = plt.subplots(2, 2, figsize=(10, 10))
-        ax[0, 0].plot(grad_x_2)
-        ax[1, 0].imshow(unwrapped_phase_image, cmap=plt.cm.binary_r, origin='lower')
-        ax[1, 1].plot(grad_y_2, range(len(grad_y_2)))
-        ax[1, 1].set(ylim=(0, len(grad_y_2)))
-        ax[0, 0].set(xlim=(0, len(grad_x_2)))
-
-        for x, y in zip(least_noisy_x_indices, least_noisy_y_indices):
-            ax[0, 0].axvline(x, color='m', alpha=0.4, ls=':')
-            ax[1, 1].axhline(y, color='m', alpha=0.4, ls=':')
-
-            ax[1, 0].axvline(x, color='m', alpha=0.4, ls=':')
-            ax[1, 0].axhline(y, color='m', alpha=0.4, ls=':')
-        plt.show()
-
         # Compute the smoothed mean phase in the background along each axis
         phase_x_bg = np.mean(unwrapped_phase_image[:, least_noisy_x_indices], axis=1)
         phase_y_bg = np.mean(unwrapped_phase_image[least_noisy_y_indices, :].T, axis=1)
         phase_x_bg_smooth = gaussian_filter1d(phase_x_bg, 50)
-        phase_y_bg_smooth = gaussian_filter1d(phase_x_bg, 50)
+        phase_y_bg_smooth = gaussian_filter1d(phase_y_bg, 50)
 
-
-        # plt.figure()
-        # plt.plot(unwrapped_phase_image[:, least_noisy_x_indices])
-        # plt.plot(np.mean(unwrapped_phase_image[:, least_noisy_x_indices], axis=1), lw=3, color='r')
-        # plt.plot(unwrapped_phase_image[least_noisy_y_indices, :].T)
-        # plt.plot(np.mean(unwrapped_phase_image[least_noisy_y_indices, :].T, axis=1), lw=3, color='r')
-        # plt.show()
-
-
-        plt.figure()
-        plt.plot(unwrapped_phase_image[:, least_noisy_x_indices])
-        plt.plot(gaussian_filter1d(np.mean(unwrapped_phase_image[:, least_noisy_x_indices], axis=1), 50), lw=3, color='r')
-        plt.show()
-
-        phase_x_polynomials = np.polyfit(least_noisy_x_indices, phase_x_background,
+        pixel_indices = x[0, :]
+        phase_x_polynomials = np.polyfit(pixel_indices, phase_x_bg_smooth,
                                          order)
-        phase_y_polynomials = np.polyfit(least_noisy_y_indices, phase_y_background,
+        phase_y_polynomials = np.polyfit(pixel_indices, phase_y_bg_smooth,
                                          order)
 
-        plt.figure()
-        plt.plot(phase_x_background)
-        plt.show()
-
-        # # Iterate to fit the median of typical rows/columns multiple times
-        # background_x_polynomials = phase_x_polynomials.copy()
-        # background_y_polynomials = phase_y_polynomials.copy()
-        # for n in range(n_aberr_corr_iter):
-        #     background_x_polynomials += np.polyfit(pixel_indices,
-        #                                 phase_x_background -
-        #                                 np.polyval(background_x_polynomials,
-        #                                            pixel_indices),
-        #                                 order)
-        #     background_y_polynomials += np.polyfit(pixel_indices,
-        #                                 phase_y_background -
-        #                                 np.polyval(background_y_polynomials,
-        #                                            pixel_indices),
-        #                                 order)
+        # Iterate to fit the median of typical rows/columns multiple times
+        background_x_polynomials = phase_x_polynomials.copy()
+        background_y_polynomials = phase_y_polynomials.copy()
+        for n in range(n_aberr_corr_iter):
+            background_x_polynomials += np.polyfit(pixel_indices,
+                                                   phase_x_bg_smooth -
+                                                   np.polyval(background_x_polynomials,
+                                                              pixel_indices), order)
+            background_y_polynomials += np.polyfit(pixel_indices,
+                                                   phase_y_bg_smooth -
+                                                   np.polyval(background_y_polynomials,
+                                                              pixel_indices), order)
 
         digital_phase_mask = np.exp(-1j*self.wavenumber *
                                     (np.polyval(background_x_polynomials, x) +
                                      np.polyval(background_y_polynomials, y)))
 
+        if plots:
+            fig, ax = plt.subplots(2, 2, figsize=(10, 10))
+            ax[0, 0].plot(grad_x_2)
+            ax[1, 0].imshow(unwrapped_phase_image,
+                            cmap=plt.cm.binary_r, origin='lower')
+            ax[1, 1].plot(grad_y_2, range(len(grad_y_2)))
+            ax[1, 1].set(ylim=(0, len(grad_y_2)))
+            ax[0, 0].set(xlim=(0, len(grad_x_2)))
 
-        # fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-        # ax[0].imshow(unwrapped_phase_image)
-        # ax[1].plot(grad_x_2)
-        # plt.show()
+            for x_i, y_i in zip(least_noisy_x_indices, least_noisy_y_indices):
+                ax[0, 0].axvline(x_i, color='m', alpha=0.4, ls=':')
+                ax[1, 1].axhline(y_i, color='m', alpha=0.4, ls=':')
 
-        #noisy_mask = _noise_filter_mask(unwrapped_phase_image)
-        # fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-        # ax[0].imshow(unwrapped_phase_image)
-        # ax[1].imshow(noisy_mask)
-        # plt.show()
-
-        # x_noisiness = np.sum(noisy_mask, axis=0)
-        # y_noisiness = np.sum(noisy_mask, axis=1)
-        # threshold = int(0.20*len(x_noisiness))
-        # print(threshold)
-        # x_threshold = x_noisiness[x_noisiness.argsort()[threshold]]
-        # y_threshold = y_noisiness[y_noisiness.argsort()[threshold]]
-        #
-        # plt.figure()
-        # plt.plot(x_noisiness)
-        # plt.axhline(x_threshold)
-        # plt.show()
-        #
-        # phase_x_background = unwrapped_phase_image[x_noisiness < x_threshold]
-        # phase_x_not_background = unwrapped_phase_image[x_noisiness >= x_threshold]
-        # phase_y_background = unwrapped_phase_image[:, y_noisiness < y_threshold]
-        # print(phase_y_background, np.shape(phase_y_background))
-        # phase_y_not_background = unwrapped_phase_image[:, y_noisiness >= y_threshold]
-        #
-        # fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-        # ax[0].plot(phase_y_background)
-        # ax[1].plot(phase_y_not_background)
-        # ax[0].set_title('background')
-        # ax[1].set_title('not background')
-        # #plt.plot(phase_y_background)
-        # plt.show()
-        #
-        #
-        # # Since you can't know which rows/cols are background rows/cols a
-        # # priori, find the phase profiles along each row, fit polynomials to
-        # # each, measure the rms error to the fit. Do a second fit excluding
-        # # high error rows/cols and taking the median of the good ones.
-        #
-        # # initial median fit to rows/cols
-        # pxpoly_init = np.polyfit(pixel_indices, np.median(phase_x, axis=0),
-        #                          order)
-        # pypoly_init = np.polyfit(pixel_indices, np.median(phase_y, axis=0),
-        #                          order)
-        #
-        # # subtract each row by initial fit, take std to measure error
-        # rms_x = np.std(np.polyval(pxpoly_init, pixel_indices)[:,np.newaxis] -
-        #                phase_x.T, axis=0)
-        # rms_y = np.std(np.polyval(pypoly_init, pixel_indices)[:,np.newaxis] -
-        #                phase_y.T, axis=0)
-        #
-        # x_within_some_sigma = (np.abs(rms_x - np.median(rms_x)) <
-        #                        0.5*np.std(rms_x))
-        # y_within_some_sigma = (np.abs(rms_y - np.median(rms_y)) <
-        #                        0.5*np.std(rms_y))
-        #
-        # # First fit to the median of only the typical rows/columns:
-        # phase_x_background = np.median(phase_x[x_within_some_sigma], axis=0)
-        # phase_y_background = np.median(phase_y[y_within_some_sigma], axis=0)
-        # phase_x_polynomials = np.polyfit(pixel_indices, phase_x_background,
-        #                                  order)
-        # phase_y_polynomials = np.polyfit(pixel_indices, phase_y_background,
-        #                                  order)
-        #
-        # # Iterate to fit the median of typical rows/columns multiple times
-        # background_x_polynomials = phase_x_polynomials.copy()
-        # background_y_polynomials = phase_y_polynomials.copy()
-        # for n in range(n_aberr_corr_iter):
-        #     background_x_polynomials += np.polyfit(pixel_indices,
-        #                                 phase_x_background -
-        #                                 np.polyval(background_x_polynomials,
-        #                                            pixel_indices),
-        #                                 order)
-        #     background_y_polynomials += np.polyfit(pixel_indices,
-        #                                 phase_y_background -
-        #                                 np.polyval(background_y_polynomials,
-        #                                            pixel_indices),
-        #                                 order)
-        #
-        # digital_phase_mask = np.exp(-1j*self.wavenumber *
-        #                             (np.polyval(background_x_polynomials, x) +
-        #                              np.polyval(background_y_polynomials, y)))
-        #
-        # if plots:
-        #     # tmp:
-        #     # from astropy.io import fits
-        #     # fits.writeto('/Users/bmmorris/SHAMU/unwrappedphase.fits',
-        #     #             phase_image, clobber=True)
-        #     #             #np.unwrap(phase_image), clobber=True)
-        #
-        #     fig, ax = plt.subplots(1,3,figsize=(16,8))
-        #     ax[0].imshow(unwrap_phase(2*phase_image, seed=self.random_seed),
-        #                  origin='lower')
-        #     [ax[0].axhline(background_row)
-        #      for background_row in self.background_rows[x_within_some_sigma]]
-        #     [ax[0].axvline(background_column)
-        #      for background_column in self.background_columns[y_within_some_sigma]]
-        #
-        #     ax[1].plot(pixel_indices,
-        #                phase_x_before_median[x_within_some_sigma].T *
-        #                self.wavenumber)
-        #     ax[1].plot(pixel_indices,
-        #                np.polyval(phase_x_polynomials, pixel_indices) *
-        #                self.wavenumber, 'r', lw=4)
-        #     ax[1].set_title('rows (x)')
-        #
-        #     ax[2].plot(pixel_indices,
-        #                phase_y_before_median[y_within_some_sigma].T *
-        #                self.wavenumber)
-        #     ax[2].plot(pixel_indices,
-        #                np.polyval(phase_y_polynomials, pixel_indices) *
-        #                self.wavenumber, 'r', lw=4)
-        #     ax[2].set_title('cols (y)')
-        #     plt.show()
+                ax[1, 0].axvline(x_i, color='m', alpha=0.4, ls=':')
+                ax[1, 0].axhline(y_i, color='m', alpha=0.4, ls=':')
+            plt.show()
 
         return digital_phase_mask
 
@@ -687,25 +516,3 @@ class ReconstructedWavefield(object):
                           **phase_kwargs)
             ax[1].set(title='Phase')
         return fig, ax
-
-
-
-def _rescale_image(image):
-    """
-
-    """
-    return (image - image.min())/(image.max() - image.min())
-
-
-def _noise_filter_mask(image, kernel_width=4):
-    """
-
-    """
-    nf = noise_filter(_rescale_image(image),
-                           np.ones((kernel_width, kernel_width)))
-    threshold = np.percentile(nf.ravel(), 95)
-    mask = np.zeros(image.shape, dtype=bool)
-    mask[nf < threshold] = False
-    mask[nf > threshold] = True
-    return mask
-
