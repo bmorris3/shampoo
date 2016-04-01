@@ -158,13 +158,24 @@ if eval(setup_cfg.get('edit_on_github')):
 ## -- Mocking --------
 
 
-from unittest.mock import MagicMock
 
 
-class Mock(MagicMock):
+class Mock(object):
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def __call__(self, *args, **kwargs):
+        return Mock()
+
     @classmethod
     def __getattr__(cls, name):
+        if name in ('__file__', '__path__'):
+            return '/dev/null'
+        elif name[0] == name[0].upper():
+            return type(name, (), {})
+        else:
             return Mock()
 
-MOCK_MODULES = ['pyfftw', 'h5py', 'fftw', 'hdf5']
-sys.modules.update((mod_name, Mock()) for mod_name in MOCK_MODULES)
+MOCK_MODULES = ['pyfftw', 'h5py']
+for mod_name in MOCK_MODULES:
+    sys.modules[mod_name] = Mock()
