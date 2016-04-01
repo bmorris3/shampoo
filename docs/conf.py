@@ -157,9 +157,6 @@ if eval(setup_cfg.get('edit_on_github')):
 
 ## -- Mocking --------
 
-
-
-
 class Mock(object):
     def __init__(self, *args, **kwargs):
         pass

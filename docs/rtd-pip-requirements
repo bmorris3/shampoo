@@ -5,3 +5,4 @@ astropy-helpers
 astropy
 scikit-image
 scipy
+mock
