@@ -5,3 +5,5 @@ astropy-helpers
 astropy
 scikit-image
 scipy
+h5py
+pyfftw
