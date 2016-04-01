@@ -5,9 +5,6 @@ Software tools in development for the [Submersible Holographic Astrobiology Micr
 ![shampoo logo](http://staff.washington.edu/bmmorris/images/shampoo_logo.png)
 
 
-## Installation
+## Docs
 
-Required packages: numpy, scipy, matplotlib, scikit-image
-
-Optional packages: pyfftw (and FFTW), HDF5, astropy
-
+[See our latest documentation here](http://shampoo.readthedocs.org/en/latest/).
