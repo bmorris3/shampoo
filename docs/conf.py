@@ -162,5 +162,5 @@ try:
 except ImportError:
     from unittest.mock import MagicMock
 
-MOCK_MODULES = ['pyfftw', 'h5py', 'fftw', 'hdf5']
+MOCK_MODULES = ['pyfftw', 'h5py', 'fftw.h', 'hdf5.h']
 sys.modules.update((mod_name, MagicMock()) for mod_name in MOCK_MODULES)
