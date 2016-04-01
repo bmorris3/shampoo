@@ -14,11 +14,11 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 from PIL import Image
 import numpy as np
-from scipy.ndimage import gaussian_filter1d, gaussian_filter
+from scipy.ndimage import gaussian_filter
 from scipy.ndimage import filters
 
 from skimage.restoration import unwrap_phase
-from skimage.filters.rank import noise_filter
+
 # Use the 'agg' backend if on Linux
 import sys
 import matplotlib
@@ -27,7 +27,7 @@ if 'linux' in sys.platform:
     matplotlib.use('agg')
 
 try:
-    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
+   from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
@@ -104,8 +104,7 @@ class Hologram(object):
     Container for holograms and their reference wavefields
     """
     def __init__(self, hologram, wavelength=405e-9,
-                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6,
-                 background_interval=3):
+                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6):
         """
         Parameters
         ----------
@@ -239,7 +238,7 @@ class Hologram(object):
 
             # Apodize the result
             psi = self.apodize(shifted_F_hologram*G)
-            #psi = shifted_F_hologram*G
+            # psi = shifted_F_hologram*G
 
             # Calculate reference wave
             self.reference_wave = self.get_digital_phase_mask(psi,
@@ -247,7 +246,6 @@ class Hologram(object):
 
         # Reconstruct the image
         psi = G*shift_peak(fft2(apodized_hologram*self.reference_wave)*mask,
-        # psi = G*shift_peak(fft2(apodized_hologram)*mask,
                            [self.n/2 - spectrum_centroid[1],
                             self.n/2 - spectrum_centroid[0]])
 
@@ -259,6 +257,9 @@ class Hologram(object):
         """
         Calculate the digital phase mask (i.e. reference wave), as in Colomb et
         al. 2006, Eqn. 26 [1]_.
+
+        Fit for a second order polynomial, numerical parametric lens with least
+        squares to remove tilt, spherical aberration.
 
         .. [1] http://www.ncbi.nlm.nih.gov/pubmed/16512526
 
@@ -282,21 +283,21 @@ class Hologram(object):
         phase_image = np.arctan(np.imag(inverse_psi)/np.real(inverse_psi))
         unwrapped_phase_image = unwrap_phase(2*phase_image,
                                              seed=self.random_seed)/2/self.wavenumber
-        unwrapped_phase_image = gaussian_filter(unwrapped_phase_image, 3)
-
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
 
+        # Fit the smoothed phase image with a 2nd order polynomial surface with
+        # mixed terms using least-squares.
         v = np.array([np.ones(len(x[0, :])), x[0, :], y[:, 0], x[0, :]**2,
                       x[0, :] * y[:, 0], y[:, 0]**2])
-        coefficients, residues, rank, singval = np.linalg.lstsq(v.T, smooth_phase_image)
-        fit_surface2 = np.dot(v.T, coefficients)
+        coefficients = np.linalg.lstsq(v.T, smooth_phase_image)[0]
+        field_curvature_mask = np.dot(v.T, coefficients)
 
-        digital_phase_mask = np.exp(-1j*self.wavenumber * fit_surface2)
+        digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
             ax[0].imshow(unwrapped_phase_image, origin='lower')
-            ax[1].imshow(fit_surface2, origin='lower')
+            ax[1].imshow(field_curvature_mask, origin='lower')
             plt.show()
 
         return digital_phase_mask
@@ -347,14 +348,14 @@ class Hologram(object):
             Fourier transform of impulse response function
         """
         y, x = self.mgrid - self.n/2
-        a = (self.wavelength**2 * (x + self.n**2 * self.dx**2 /
-             (2.0 * propagation_distance * self.wavelength))**2 /
-             (self.n**2 * self.dx**2))
-        b = (self.wavelength**2 * (y + self.n**2 * self.dy**2 /
-             (2.0 * propagation_distance * self.wavelength))**2 /
-             (self.n**2*self.dy**2))
+        first_term = (self.wavelength**2 * (x + self.n**2 * self.dx**2 /
+                      (2.0 * propagation_distance * self.wavelength))**2 /
+                      (self.n**2 * self.dx**2))
+        second_term = (self.wavelength**2 * (y + self.n**2 * self.dy**2 /
+                       (2.0 * propagation_distance * self.wavelength))**2 /
+                       (self.n**2 * self.dy**2))
         g = np.exp(-1j * self.wavenumber* propagation_distance *
-                   np.sqrt(1.0 - a - b))
+                   np.sqrt(1.0 - first_term - second_term))
         return g
 
     def generate_real_image_mask(self, center_x, center_y, radius):
@@ -451,8 +452,8 @@ class ReconstructedWavefield(object):
 
     def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r):
 
-        phase_kwargs = dict(vmin=np.percentile(self.phase, 1),
-                            vmax=np.percentile(self.phase, 99))
+        phase_kwargs = dict(vmin=np.percentile(self.phase, 0.1),
+                            vmax=np.percentile(self.phase, 99.9))
 
         if all is None:
             if phase and not intensity:
