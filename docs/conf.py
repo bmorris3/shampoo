@@ -157,8 +157,8 @@ if eval(setup_cfg.get('edit_on_github')):
 
 ## -- Mocking --------
 
-import sys
 from unittest.mock import MagicMock
+
 
 class Mock(MagicMock):
     @classmethod

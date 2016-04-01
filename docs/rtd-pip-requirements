@@ -4,6 +4,4 @@ Cython
 astropy-helpers
 astropy
 scikit-image
-pyfftw
-h5py
 scipy
