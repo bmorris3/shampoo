@@ -12,12 +12,13 @@ are applied [2]_.
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-from PIL import Image
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import filters
 
 from skimage.restoration import unwrap_phase
+from skimage.io import imread
 
 # Use the 'agg' backend if on Linux
 import sys
@@ -94,9 +95,9 @@ def make_items_hashable(input_iterable):
 
 def _load_hologram(hologram_path):
     """
-    Load a hologram from path ``self.hologram_path`` using PIL and numpy.
+    Load a hologram from path ``self.hologram_path`` using skimage and numpy.
     """
-    return np.array(Image.open(hologram_path), dtype=np.float64)
+    return np.array(imread(hologram_path), dtype=np.float64)
 
 
 class Hologram(object):

@@ -6,17 +6,20 @@ and their reconstructions via HDF5.
 
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-from PIL import Image
+
 import numpy as np
 import h5py
 import os
+from skimage.io import imread
 from astropy.utils.console import ProgressBar
 
 __all__ = ['create_hdf5_archive', 'open_hdf5_archive']
 
+
 def tiff_to_ndarray(path):
     """Read in TIFF file, return `~numpy.ndarray`"""
-    return np.array(Image.open(path))
+    return np.array(imread(path), dtype=np.float64)
+
 
 def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
                         compression='lzf', overwrite=False):

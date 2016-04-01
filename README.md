@@ -7,7 +7,7 @@ Software tools in development for the [Submersible Holographic Astrobiology Micr
 
 ## Installation
 
-Required packages: numpy, scipy, matplotlib, scikit-image, PIL
+Required packages: numpy, scipy, matplotlib, scikit-image
 
 Optional packages: pyfftw (and FFTW), HDF5, astropy
 
