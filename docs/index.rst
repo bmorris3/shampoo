@@ -2,9 +2,9 @@
 
 .. _shampoo:
 
-**********************************
+***************************************************
 `shampoo`: Digital Holographic Microscopy in Python
-**********************************
+***************************************************
 
 shampoo is an open source Python package for digital holographic
 microscopy with `SHAMU <http://www.caltech.edu/news/building-microscope-search-signs-life-other-worlds-48555>`_, 

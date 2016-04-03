@@ -27,11 +27,11 @@ env:
         - NUMPY_VERSION=1.9
         - ASTROPY_VERSION=stable
         - SETUP_CMD='test'
-        - PIP_DEPENDENCIES='scikit-image h5py pyfftw'
+        - PIP_DEPENDENCIES=''
         # For this package-template, we include examples of Cython modules,
         # so Cython is required for testing. If your package does not include
         # Cython code, you can set CONDA_DEPENDENCIES=''
-        - CONDA_DEPENDENCIES='Cython numpy scipy astropy matplotlib'
+        - CONDA_DEPENDENCIES='Cython numpy scipy matplotlib scikit-image'
     matrix:
         # Make sure that egg_info works without dependencies
         - SETUP_CMD='egg_info'
@@ -41,9 +41,9 @@ env:
 matrix:
     include:
 
-        # Do a coverage test in Python 2.
-        - python: 2.7
-          env: SETUP_CMD='test --coverage'
+#        # Do a coverage test in Python 2.
+#        - python: 2.7
+#          env: SETUP_CMD='test --coverage'
 
         # Check for sphinx doc build warnings - we do this first because it
         # may run for a long time
@@ -53,7 +53,7 @@ matrix:
         # Try Astropy development version
         - python: 2.7
           env: ASTROPY_VERSION=development
-        - python: 3.4
+        - python: 3.5
           env: ASTROPY_VERSION=development
 
 

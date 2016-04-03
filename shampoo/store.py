@@ -25,11 +25,7 @@ def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
                         compression='lzf', overwrite=False):
     """
     Create HDF5 file structure for holograms and phase/intensity
-    reconstructions with the following format:
-
-    /
-    |--holograms
-    |--reconstructed_wavefields
+    reconstructions.
 
     Parameters
     ----------
@@ -82,7 +78,7 @@ def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
 
 def open_hdf5_archive(hdf5_path):
     """
-    Load and return a shampoo HDF5 archive
+    Load and return a shampoo HDF5 archive.
 
     Parameters
     ----------
