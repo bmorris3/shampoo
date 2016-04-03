@@ -19,7 +19,7 @@ Links
 =====
 
 * `Source code <https://github.com/bmorris3/shampoo/>`_
-* `Issues <https://github.com/astropy/astroplan/issues>`_
+* `Issues <https://github.com/bmorris3/shampoo/issues>`_
 * `Docs <http://shampoo.readthedocs.org/>`_
 
 .. _shampoo_docs:
@@ -37,4 +37,4 @@ General Documentation
 Authors
 =======
 
- * `Brett Morris (UW) <http://brettmorr.is>`_
+* `Brett Morris (UW) <http://brettmorr.is>`_
