@@ -31,7 +31,7 @@ env:
         # For this package-template, we include examples of Cython modules,
         # so Cython is required for testing. If your package does not include
         # Cython code, you can set CONDA_DEPENDENCIES=''
-        - CONDA_DEPENDENCIES='Cython numpy scipy matplotlib scikit-image'
+        - CONDA_DEPENDENCIES='Cython scipy h5py scipy matplotlib scikit-image'
     matrix:
         # Make sure that egg_info works without dependencies
         - SETUP_CMD='egg_info'
