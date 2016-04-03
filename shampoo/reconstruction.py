@@ -154,7 +154,7 @@ class Hologram(object):
                     plot_fourier_peak=False,
                     cache=False, digital_phase_mask=None):
         """
-        Wrapper around `~shampoo.reconstruction.reconstruct_wavefield` for
+        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wavefield` for
         caching.
 
         Parameters
