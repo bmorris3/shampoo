@@ -15,6 +15,13 @@ specimen detection and tracking.
 .. warning::
         This code is in development and may break without warning.
 
+Links
+=====
+
+* `Source code <https://github.com/bmorris3/shampoo/>`_
+* `Issues <https://github.com/astropy/astroplan/issues>`_
+* `Docs <http://shampoo.readthedocs.org/>`_
+
 .. _shampoo_docs:
 
 General Documentation
@@ -29,5 +36,5 @@ General Documentation
 
 Authors
 =======
- * Brett Morris (UW)
 
+ * `Brett Morris (UW) <http://brettmorr.is>`_
