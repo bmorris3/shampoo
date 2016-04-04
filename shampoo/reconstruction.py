@@ -14,7 +14,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, filters
+from scipy.ndimage import gaussian_filter
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
 
@@ -96,6 +96,15 @@ def _load_hologram(hologram_path):
     Load a hologram from path ``hologram_path`` using scikit-image and numpy.
     """
     return np.array(imread(hologram_path), dtype=np.float64)
+
+
+def _find_peak_centroid(image, gaussian_width=10):
+    """
+    Smooth the image, find centroid of peak in the image.
+    """
+    smoothed_image = gaussian_filter(image, gaussian_width)
+    return np.array(np.unravel_index(smoothed_image.T.argmax(),
+                                     image.shape))
 
 
 class Hologram(object):
@@ -226,8 +235,8 @@ class Hologram(object):
 
         # Isolate the real image in Fourier space, find spectral peak
         F_hologram = fft2(apodized_hologram)
-        spectrum_centroid = self.find_fourier_peak_centroid(F_hologram,
-                                                            plot=plot_fourier_peak)
+        spectrum_centroid = self.fourier_peak_centroid(F_hologram,
+                                                       plot=plot_fourier_peak)
 
         # Create mask based on coords of spectral peak:
         mask_radius = 150./self.rebin_factor
@@ -391,8 +400,8 @@ class Hologram(object):
         mask[(x-center_x)**2 + (y-center_y)**2 < radius**2] = 1.0
         return mask
     
-    def find_fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
-                                   plot=False):
+    def fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
+                              plot=False):
         """
         Calculate the centroid of the signal spike in Fourier space near the
         frequencies of the real image.
@@ -415,18 +424,17 @@ class Hologram(object):
             hologram near the real image.
         """
         margin = int(self.n*margin_factor)
-        abs_fourier_arr = filters.gaussian_filter(np.abs(fourier_arr)[margin:-margin,
-                                                  margin:-margin], 10)
-                                                  #margin:-margin], 2)
-        spectrum_centroid = np.array(np.unravel_index(abs_fourier_arr.T.argmax(),
-                                     abs_fourier_arr.shape)) + margin
+        abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        spectrum_centroid = _find_peak_centroid(abs_fourier_arr,
+                                                gaussian_width=10) + margin
 
         if plot:
             fig, ax = plt.subplots(1, 2, figsize=(18, 6))
 
             ax[0].imshow(abs_fourier_arr, interpolation='nearest',
                         origin='lower')
-            ax[0].plot(spectrum_centroid[0]-margin, spectrum_centroid[1]-margin, 'o')
+            ax[0].plot(spectrum_centroid[0]-margin,
+                       spectrum_centroid[1]-margin, 'o')
 
             ax[1].imshow(np.log(np.abs(fourier_arr)), interpolation='nearest',
                         origin='lower')
@@ -458,8 +466,7 @@ class ReconstructedWavefield(object):
     @property
     def phase(self):
         """
-        `~numpy.ndarray` of the reconstructed phase. The phase has been
-        unwrapped.
+        `~numpy.ndarray` of the reconstructed, unwrapped phase.
         """
         if self._phase_image is None:
             self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
