@@ -1,12 +1,10 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from ..reconstruction import Hologram, rebin_image, _find_peak_centroid
+from ..reconstruction import (Hologram, rebin_image, _find_peak_centroid,
+                              RANDOM_SEED)
 
 import numpy as np
-
-
-RANDOM_SEED = 40
 np.random.seed(RANDOM_SEED)
 
 

@@ -32,9 +32,7 @@ try:
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
-__all__ = ['Hologram', 'ReconstructedWavefield']
-
-
+__all__ = ['Hologram', 'ReconstructedWave']
 RANDOM_SEED = 42
 
 
@@ -165,7 +163,7 @@ class Hologram(object):
                     plot_fourier_peak=False,
                     cache=False, digital_phase_mask=None):
         """
-        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wavefield` for
+        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wave` for
         caching.
 
         Parameters
@@ -184,8 +182,8 @@ class Hologram(object):
 
         Returns
         -------
-        reconstructed_wavefield : `~shampoo.reconstruction.ReconstructedWavefield`
-            The reconstructed wavefield.
+        reconstructed_wave : `~shampoo.reconstruction.ReconstructedWave`
+            The reconstructed wave.
         """
         self.digital_phase_mask = digital_phase_mask
 
@@ -195,26 +193,26 @@ class Hologram(object):
 
         # If this reconstruction is cached, get it.
         if cache and cache_key in self.reconstructions:
-            reconstructed_wavefield = self.reconstructions[cache_key]
+            reconstructed_wave = self.reconstructions[cache_key]
 
         # If this reconstruction is not in the cache,
         # or if the cache is turned off, do the reconstruction
         elif (cache and cache_key not in self.reconstructions) or not cache:
-            reconstructed_wavefield  = self.reconstruct_wavefield(propagation_distance,
-                                                                  plot_aberration_correction=plot_aberration_correction,
-                                                                  plot_fourier_peak=plot_fourier_peak)
+            reconstructed_wave = self.reconstruct_wave(propagation_distance,
+                                                       plot_aberration_correction=plot_aberration_correction,
+                                                       plot_fourier_peak=plot_fourier_peak)
 
         # If this reconstruction should be cached and it is not:
         if cache and cache_key not in self.reconstructions:
-            self.reconstructions[cache_key] = ReconstructedWavefield(reconstructed_wavefield)
+            self.reconstructions[cache_key] = ReconstructedWave(reconstructed_wave)
 
-        return ReconstructedWavefield(reconstructed_wavefield)
+        return ReconstructedWave(reconstructed_wave)
 
-    def reconstruct_wavefield(self, propagation_distance,
-                              plot_aberration_correction=False,
-                              plot_fourier_peak=False):
+    def reconstruct_wave(self, propagation_distance,
+                         plot_aberration_correction=False,
+                         plot_fourier_peak=False):
         """
-        Reconstruct wavefield from hologram stored in file ``hologram_path`` at
+        Reconstruct wave from hologram stored in file ``hologram_path`` at
         propagation distance ``propagation_distance``.
 
         Parameters
@@ -229,8 +227,8 @@ class Hologram(object):
 
         Returns
         -------
-        reconstructed_wavefield : `~numpy.ndarray` (complex)
-            Reconstructed wavefield from hologram
+        reconstructed_wave : `~numpy.ndarray` (complex)
+            Reconstructed wave from hologram
         """
         # Read input image
         apodized_hologram = self.apodize(self.hologram)
@@ -242,7 +240,7 @@ class Hologram(object):
 
         # Create mask based on coords of spectral peak:
         mask_radius = 150./self.rebin_factor
-        mask = self.generate_real_image_mask(x_peak, y_peak, mask_radius)
+        mask = self.real_image_mask(x_peak, y_peak, mask_radius)
 
         # Calculate Fourier transform of impulse response function
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
@@ -264,9 +262,9 @@ class Hologram(object):
         psi = G*shift_peak(fft2(apodized_hologram * self.digital_phase_mask) * mask,
                            [self.n/2 - x_peak, self.n/2 - y_peak])
 
-        reconstructed_wavefield = shift_peak(ifft2(psi),
+        reconstructed_wave = shift_peak(ifft2(psi),
                                              [self.n/2, self.n/2])
-        return reconstructed_wavefield
+        return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
         """
@@ -339,7 +337,7 @@ class Hologram(object):
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
         """
         Calculate the Fourier transform of impulse response function, sometimes
-        represented as ``G``.
+        represented as ``G`` in the literature.
 
         For reference, see Eqn 3.22 of Schnars & Juptner (2002) Meas. Sci.
         Technol. 13 R85-R101 [1]_.
@@ -367,7 +365,7 @@ class Hologram(object):
                    np.sqrt(1.0 - first_term - second_term))
         return G
 
-    def generate_real_image_mask(self, center_x, center_y, radius):
+    def real_image_mask(self, center_x, center_y, radius):
         """
         Calculate the Fourier-space mask to isolate the real image
     
@@ -435,13 +433,13 @@ class Hologram(object):
         return spectrum_centroid
 
 
-class ReconstructedWavefield(object):
+class ReconstructedWave(object):
     """
-    Container for reconstructed wavefields and their intensity and phase
+    Container for reconstructed waves and their intensity and phase
     arrays.
     """
-    def __init__(self, reconstructed_wavefield):
-        self.reconstructed_wavefield = reconstructed_wavefield
+    def __init__(self, reconstructed_wave):
+        self.reconstructed_wave = reconstructed_wave
         self._intensity_image = None
         self._phase_image = None
         self.random_seed = RANDOM_SEED
@@ -452,7 +450,7 @@ class ReconstructedWavefield(object):
         `~numpy.ndarray` of the reconstructed intensity.
         """
         if self._intensity_image is None:
-            self._intensity_image = np.abs(self.reconstructed_wavefield)
+            self._intensity_image = np.abs(self.reconstructed_wave)
         return self._intensity_image
 
     @property
@@ -461,8 +459,8 @@ class ReconstructedWavefield(object):
         `~numpy.ndarray` of the reconstructed, unwrapped phase.
         """
         if self._phase_image is None:
-            self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
-                                             np.real(self.reconstructed_wavefield)),
+            self._phase_image = unwrap_phase(2 * np.arctan(np.imag(self.reconstructed_wave) /
+                                                           np.real(self.reconstructed_wave)),
                                              seed=self.random_seed)
 
         return self._phase_image
