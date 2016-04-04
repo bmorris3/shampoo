@@ -48,15 +48,13 @@ def test_centroid():
 
 def test_crop_image():
     # Even number rows/cols
-    image1 = np.arange(100).reshape((10, 10))
+    image1 = np.arange(1024).reshape((32, 32))
     new_shape1 = (image1.shape[0]//2, image1.shape[1]//2)
-    with pytest.warns(CropEfficiencyWarning):
-        cropped_image1 = _crop_image(image1, 0.5)
+    cropped_image1 = _crop_image(image1, 0.5)
     assert new_shape1 == cropped_image1.shape
 
     # Odd number rows/cols
     image2 = np.arange(121).reshape((11, 11))
     new_shape2 = (image2.shape[0]//2 + 1, image2.shape[1]//2 + 1)
-    with pytest.warns(CropEfficiencyWarning):
-        cropped_image2 = _crop_image(image2, 0.5)
+    cropped_image2 = _crop_image(image2, 0.5)
     assert new_shape2 == cropped_image2.shape
