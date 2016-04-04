@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 if 'linux' in sys.platform:
     matplotlib.use('agg')
 
+# Try importing optional dependency PyFFTW for Fourier transforms. If the import
+# fails, import scipy's FFT module instead
 try:
    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
 except ImportError:
@@ -482,27 +484,33 @@ class ReconstructedWavefield(object):
         Returns
         -------
         fig : `~matplotlib.figure.Figure`
+            Figure
         ax : `~matplotlib.axes.Axes`
+            Axis
         """
-        phase_kwargs = dict(vmin=np.percentile(self.phase, 0.1),
-                            vmax=np.percentile(self.phase, 99.9))
+
         all_kwargs = dict(origin='lower', interpolation='nearest',
                           cmap=cmap)
+
+        phase_kwargs = all_kwargs.copy()
+        phase_kwargs.update(dict(vmin=np.percentile(self.phase, 0.1),
+                                 vmax=np.percentile(self.phase, 99.9)))
 
         fig = None
         if not all:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1, ::-1], **phase_kwargs, **all_kwargs)
+                ax.imshow(self.phase[::-1, ::-1], **phase_kwargs)
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
                 ax.imshow(self.intensity[::-1, ::-1], **all_kwargs)
 
         if fig is None:
-            fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True, sharey=True)
+            fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True,
+                                   sharey=True)
             ax[0].imshow(self.intensity[::-1, ::-1], **all_kwargs)
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1, ::-1], **phase_kwargs, **all_kwargs)
+            ax[1].imshow(self.phase[::-1, ::-1], **phase_kwargs)
             ax[1].set(title='Phase')
 
         return fig, ax
