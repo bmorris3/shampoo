@@ -89,6 +89,9 @@ install:
     # section if they are needed before setting up conda) to install any
     # other dependencies.
 
+    #  This is needed to support py3.5, see pytest-dev/pytest#744
+    - pip install pytest>=2.7.3 --upgrade
+
 script:
    - python setup.py $SETUP_CMD
 

@@ -9,6 +9,7 @@ import numpy as np
 RANDOM_SEED = 40
 np.random.seed(RANDOM_SEED)
 
+
 def _example_hologram(dim=2048):
     """
     Generate example hologram.
@@ -32,7 +33,7 @@ def test_rebin_image():
 
 
 def _gaussian2d(amplitude, width, centroid, dim):
-    y, x = np.mgrid[0:dim, 0:dim]
+    x, y = np.mgrid[0:dim, 0:dim]
     x_centroid, y_centroid = centroid
     return amplitude*np.exp(-0.5 * ((x - x_centroid)**2/width**2 +
                                     (y - y_centroid)**2/width**2))
