@@ -12,11 +12,12 @@ are applied [2]_.
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
-
+import warnings
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
+from astropy.utils.exceptions import AstropyUserWarning
 
 # Use the 'agg' backend if on Linux
 import sys
@@ -34,7 +35,7 @@ except ImportError:
 
 __all__ = ['Hologram', 'ReconstructedWave']
 RANDOM_SEED = 42
-
+TWO_TO_N = [2**i for i in range(13)]
 
 def rebin_image(a, binning_factor):
     # Courtesy of J.F. Sebastian: http://stackoverflow.com/a/8090605
@@ -107,17 +108,42 @@ def _find_peak_centroid(image, gaussian_width=10):
                                      image.shape))
 
 
+def _crop_image(image, crop_fraction):
+    """
+    Crop an image by a factor of ``crop_fraction``.
+    """
+    if crop_fraction == 0:
+        return image
+
+    crop_length = int(image.shape[0] * crop_fraction)
+
+    if crop_length not in TWO_TO_N:
+        message = ("Final dimensions after crop should be a power of 2^N. "
+                   "Crop fraction of {0} yields dimensions ({1}, {1})"
+                   .format(crop_fraction, crop_length))
+        warnings.warn(message, CropEfficiencyWarning)
+
+    cropped_image = image[crop_length//2:-crop_length//2,
+                          crop_length//2:-crop_length//2]
+    return cropped_image
+
+
+class CropEfficiencyWarning(AstropyUserWarning):
+    pass
+
 class Hologram(object):
     """
     Container for holograms and methods to reconstruct them.
     """
-    def __init__(self, hologram, wavelength=405e-9, rebin_factor=1,
-                 dx=3.45e-6, dy=3.45e-6):
+    def __init__(self, hologram, crop_fraction=None, wavelength=405e-9,
+                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6):
         """
         Parameters
         ----------
         hologram : `~numpy.ndarray`
             Input hologram
+        crop_fraction : float
+            Fraction of the image to crop for analysis
         wavelength : float [meters]
             Wavelength of laser
         rebin_factor : int
@@ -127,9 +153,18 @@ class Hologram(object):
         dy: float [meters]
             Pixel width in y-direction (unbinned)
         """
-
+        self.crop_fraction = crop_fraction
         self.rebin_factor = rebin_factor
-        self.hologram = rebin_image(np.float64(hologram), self.rebin_factor)
+
+        # Rebin the hologram
+        binned_hologram = rebin_image(np.float64(hologram), self.rebin_factor)
+
+        # Crop the hologram by factor crop_factor, centered on original center
+        if crop_fraction is not None:
+            self.hologram = _crop_image(binned_hologram, crop_fraction)
+        else:
+            self.hologram = binned_hologram
+
         self.n = self.hologram.shape[0]
         self.wavelength = wavelength
         self.wavenumber = 2*np.pi/self.wavelength
@@ -142,19 +177,6 @@ class Hologram(object):
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
-        """
-        Open a raw hologram from a tif file.
-
-        Parameters
-        ----------
-        hologram_path : string
-            Path to input hologram to reconstruct
-
-        kwargs : dict
-            Keyword arguments to pass to the `~shampoo.reconstruction.Hologram`
-            constructor.
-
-        """
         hologram = _load_hologram(hologram_path)
         return cls(hologram, **kwargs)
 

@@ -89,7 +89,6 @@ install:
     # section if they are needed before setting up conda) to install any
     # other dependencies.
 
-
 script:
    - python setup.py $SETUP_CMD
 
