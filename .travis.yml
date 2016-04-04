@@ -2,7 +2,7 @@ language: python
 
 python:
     - 2.7
-    - 3.5
+    - 3.4
 
 # Setting sudo to false opts in to Travis-CI container-based builds.
 sudo: false
@@ -53,7 +53,7 @@ matrix:
         # Try Astropy development version
         - python: 2.7
           env: ASTROPY_VERSION=development
-        - python: 3.5
+        - python: 3.4
           env: ASTROPY_VERSION=development
 
 
@@ -88,6 +88,7 @@ install:
     # well as at the start of the install section or in the before_install
     # section if they are needed before setting up conda) to install any
     # other dependencies.
+
 
 script:
    - python setup.py $SETUP_CMD

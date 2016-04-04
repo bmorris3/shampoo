@@ -14,7 +14,7 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 import numpy as np
-from scipy.ndimage import gaussian_filter, filters
+from scipy.ndimage import gaussian_filter
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
 
@@ -25,14 +25,14 @@ import matplotlib.pyplot as plt
 if 'linux' in sys.platform:
     matplotlib.use('agg')
 
+# Try importing optional dependency PyFFTW for Fourier transforms. If the import
+# fails, import scipy's FFT module instead
 try:
    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
-__all__ = ['Hologram', 'ReconstructedWavefield']
-
-
+__all__ = ['Hologram', 'ReconstructedWave']
 RANDOM_SEED = 42
 
 
@@ -98,12 +98,21 @@ def _load_hologram(hologram_path):
     return np.array(imread(hologram_path), dtype=np.float64)
 
 
+def _find_peak_centroid(image, gaussian_width=10):
+    """
+    Smooth the image, find centroid of peak in the image.
+    """
+    smoothed_image = gaussian_filter(image, gaussian_width)
+    return np.array(np.unravel_index(smoothed_image.argmax(),
+                                     image.shape))
+
+
 class Hologram(object):
     """
     Container for holograms and methods to reconstruct them.
     """
-    def __init__(self, hologram, wavelength=405e-9,
-                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6):
+    def __init__(self, hologram, wavelength=405e-9, rebin_factor=1,
+                 dx=3.45e-6, dy=3.45e-6):
         """
         Parameters
         ----------
@@ -154,7 +163,7 @@ class Hologram(object):
                     plot_fourier_peak=False,
                     cache=False, digital_phase_mask=None):
         """
-        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wavefield` for
+        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wave` for
         caching.
 
         Parameters
@@ -173,8 +182,8 @@ class Hologram(object):
 
         Returns
         -------
-        reconstructed_wavefield : `~shampoo.reconstruction.ReconstructedWavefield`
-            The reconstructed wavefield.
+        reconstructed_wave : `~shampoo.reconstruction.ReconstructedWave`
+            The reconstructed wave.
         """
         self.digital_phase_mask = digital_phase_mask
 
@@ -184,26 +193,26 @@ class Hologram(object):
 
         # If this reconstruction is cached, get it.
         if cache and cache_key in self.reconstructions:
-            reconstructed_wavefield = self.reconstructions[cache_key]
+            reconstructed_wave = self.reconstructions[cache_key]
 
         # If this reconstruction is not in the cache,
         # or if the cache is turned off, do the reconstruction
         elif (cache and cache_key not in self.reconstructions) or not cache:
-            reconstructed_wavefield  = self.reconstruct_wavefield(propagation_distance,
-                                                                  plot_aberration_correction=plot_aberration_correction,
-                                                                  plot_fourier_peak=plot_fourier_peak)
+            reconstructed_wave = self.reconstruct_wave(propagation_distance,
+                                                       plot_aberration_correction=plot_aberration_correction,
+                                                       plot_fourier_peak=plot_fourier_peak)
 
         # If this reconstruction should be cached and it is not:
         if cache and cache_key not in self.reconstructions:
-            self.reconstructions[cache_key] = ReconstructedWavefield(reconstructed_wavefield)
+            self.reconstructions[cache_key] = ReconstructedWave(reconstructed_wave)
 
-        return ReconstructedWavefield(reconstructed_wavefield)
+        return ReconstructedWave(reconstructed_wave)
 
-    def reconstruct_wavefield(self, propagation_distance,
-                              plot_aberration_correction=False,
-                              plot_fourier_peak=False):
+    def reconstruct_wave(self, propagation_distance,
+                         plot_aberration_correction=False,
+                         plot_fourier_peak=False):
         """
-        Reconstruct wavefield from hologram stored in file ``hologram_path`` at
+        Reconstruct wave from hologram stored in file ``hologram_path`` at
         propagation distance ``propagation_distance``.
 
         Parameters
@@ -218,37 +227,28 @@ class Hologram(object):
 
         Returns
         -------
-        reconstructed_wavefield : `~numpy.ndarray` (complex)
-            Reconstructed wavefield from hologram
+        reconstructed_wave : `~numpy.ndarray` (complex)
+            Reconstructed wave from hologram
         """
         # Read input image
         apodized_hologram = self.apodize(self.hologram)
 
         # Isolate the real image in Fourier space, find spectral peak
         F_hologram = fft2(apodized_hologram)
-        spectrum_centroid = self.find_fourier_peak_centroid(F_hologram,
-                                                            plot=plot_fourier_peak)
+        x_peak, y_peak = self.fourier_peak_centroid(F_hologram,
+                                                    plot=plot_fourier_peak)
 
         # Create mask based on coords of spectral peak:
         mask_radius = 150./self.rebin_factor
-        mask = self.generate_real_image_mask(spectrum_centroid[0],
-                                             spectrum_centroid[1],
-                                             mask_radius)
+        mask = self.real_image_mask(x_peak, y_peak, mask_radius)
 
         # Calculate Fourier transform of impulse response function
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
 
-        # plt.imshow(np.log(np.abs(G)), interpolation='nearest')
-        # #plt.plot(spectrum_centroid[0], spectrum_centroid[1], 'o')
-        # plt.plot(self.n/2, self.n/2, 'bo')
-        # plt.title('G')
-        # plt.show()
-
         if self.digital_phase_mask is None:
             # Center the spectral peak
             shifted_F_hologram = shift_peak(F_hologram*mask,
-                                            [self.n/2-spectrum_centroid[1],
-                                             self.n/2-spectrum_centroid[0]])
+                                            [self.n/2-x_peak, self.n/2-y_peak])
 
             # Apodize the result
             psi = self.apodize(shifted_F_hologram*G)
@@ -260,12 +260,11 @@ class Hologram(object):
 
         # Reconstruct the image
         psi = G*shift_peak(fft2(apodized_hologram * self.digital_phase_mask) * mask,
-                           [self.n/2 - spectrum_centroid[1],
-                            self.n/2 - spectrum_centroid[0]])
+                           [self.n/2 - x_peak, self.n/2 - y_peak])
 
-        reconstructed_wavefield = shift_peak(ifft2(psi),
+        reconstructed_wave = shift_peak(ifft2(psi),
                                              [self.n/2, self.n/2])
-        return reconstructed_wavefield
+        return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
         """
@@ -290,7 +289,7 @@ class Hologram(object):
         phase_mask : `~numpy.ndarray`
             Digital phase mask, used for correcting phase aberrations.
         """
-        y, x = self.mgrid - self.n/2
+        x, y = self.mgrid - self.n/2
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
@@ -330,7 +329,7 @@ class Hologram(object):
         apodized_arr : `~numpy.ndarray`
             Apodized array
         """
-        y, x = self.mgrid
+        x, y = self.mgrid
         arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
                 np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
         return arr
@@ -338,7 +337,7 @@ class Hologram(object):
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
         """
         Calculate the Fourier transform of impulse response function, sometimes
-        represented as ``G``.
+        represented as ``G`` in the literature.
 
         For reference, see Eqn 3.22 of Schnars & Juptner (2002) Meas. Sci.
         Technol. 13 R85-R101 [1]_.
@@ -355,18 +354,18 @@ class Hologram(object):
         G : `~numpy.ndarray`
             Fourier transform of impulse response function
         """
-        y, x = self.mgrid - self.n/2
+        x, y = self.mgrid - self.n/2
         first_term = (self.wavelength**2 * (x + self.n**2 * self.dx**2 /
                       (2.0 * propagation_distance * self.wavelength))**2 /
                       (self.n**2 * self.dx**2))
         second_term = (self.wavelength**2 * (y + self.n**2 * self.dy**2 /
                        (2.0 * propagation_distance * self.wavelength))**2 /
                        (self.n**2 * self.dy**2))
-        G = np.exp(-1j * self.wavenumber* propagation_distance *
+        G = np.exp(-1j * self.wavenumber * propagation_distance *
                    np.sqrt(1.0 - first_term - second_term))
         return G
 
-    def generate_real_image_mask(self, center_x, center_y, radius):
+    def real_image_mask(self, center_x, center_y, radius):
         """
         Calculate the Fourier-space mask to isolate the real image
     
@@ -386,13 +385,13 @@ class Hologram(object):
             Binary-valued mask centered on the real-image peak in the Fourier
             transform of the hologram.
         """
-        y, x = self.mgrid
+        x, y = self.mgrid
         mask = np.zeros((self.n, self.n))
         mask[(x-center_x)**2 + (y-center_y)**2 < radius**2] = 1.0
         return mask
     
-    def find_fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
-                                   plot=False):
+    def fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
+                              plot=False):
         """
         Calculate the centroid of the signal spike in Fourier space near the
         frequencies of the real image.
@@ -415,33 +414,32 @@ class Hologram(object):
             hologram near the real image.
         """
         margin = int(self.n*margin_factor)
-        abs_fourier_arr = filters.gaussian_filter(np.abs(fourier_arr)[margin:-margin,
-                                                  margin:-margin], 10)
-                                                  #margin:-margin], 2)
-        spectrum_centroid = np.array(np.unravel_index(abs_fourier_arr.T.argmax(),
-                                     abs_fourier_arr.shape)) + margin
+        abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        spectrum_centroid = _find_peak_centroid(abs_fourier_arr,
+                                                gaussian_width=10) + margin
 
         if plot:
             fig, ax = plt.subplots(1, 2, figsize=(18, 6))
 
             ax[0].imshow(abs_fourier_arr, interpolation='nearest',
                         origin='lower')
-            ax[0].plot(spectrum_centroid[0]-margin, spectrum_centroid[1]-margin, 'o')
+            ax[0].plot(spectrum_centroid[1]-margin,
+                       spectrum_centroid[0]-margin, 'o')
 
             ax[1].imshow(np.log(np.abs(fourier_arr)), interpolation='nearest',
                         origin='lower')
-            ax[1].plot(spectrum_centroid[0], spectrum_centroid[1], 'o')
+            ax[1].plot(spectrum_centroid[1], spectrum_centroid[0], 'o')
             plt.show()
         return spectrum_centroid
 
 
-class ReconstructedWavefield(object):
+class ReconstructedWave(object):
     """
-    Container for reconstructed wavefields and their intensity and phase
+    Container for reconstructed waves and their intensity and phase
     arrays.
     """
-    def __init__(self, reconstructed_wavefield):
-        self.reconstructed_wavefield = reconstructed_wavefield
+    def __init__(self, reconstructed_wave):
+        self.reconstructed_wave = reconstructed_wave
         self._intensity_image = None
         self._phase_image = None
         self.random_seed = RANDOM_SEED
@@ -452,57 +450,65 @@ class ReconstructedWavefield(object):
         `~numpy.ndarray` of the reconstructed intensity.
         """
         if self._intensity_image is None:
-            self._intensity_image = np.abs(self.reconstructed_wavefield)
+            self._intensity_image = np.abs(self.reconstructed_wave)
         return self._intensity_image
 
     @property
     def phase(self):
         """
-        `~numpy.ndarray` of the reconstructed phase. The phase has been
-        unwrapped.
+        `~numpy.ndarray` of the reconstructed, unwrapped phase.
         """
         if self._phase_image is None:
-            self._phase_image = unwrap_phase(2*np.arctan(np.imag(self.reconstructed_wavefield)/
-                                             np.real(self.reconstructed_wavefield)),
+            self._phase_image = unwrap_phase(2 * np.arctan(np.imag(self.reconstructed_wave) /
+                                                           np.real(self.reconstructed_wave)),
                                              seed=self.random_seed)
 
         return self._phase_image
 
-    def plot(self, phase=False, intensity=False, all=None, cmap=plt.cm.binary_r):
+    def plot(self, phase=False, intensity=False, all=False, cmap=plt.cm.binary_r):
         """
+        Plot the reconstructed phase and/or intensity images.
 
         Parameters
         ----------
-        phase:
-        intensity:
-        all:
-        cmap:
-
+        phase : bool
+            Toggle unwrapped phase plot. Default is False.
+        intensity : bool
+            Toggle intensity plot. Default is False.
+        all : bool
+            Toggle unwrapped phase plot and . Default is False.
+        cmap : `~matplotlib.colors.Colormap`
+            Matplotlib colormap for phase and intensity plots.
         Returns
         -------
         fig : `~matplotlib.figure.Figure`
+            Figure
         ax : `~matplotlib.axes.Axes`
+            Axis
         """
-        phase_kwargs = dict(vmin=np.percentile(self.phase, 0.1),
-                            vmax=np.percentile(self.phase, 99.9))
 
-        if all is None:
+        all_kwargs = dict(origin='lower', interpolation='nearest',
+                          cmap=cmap)
+
+        phase_kwargs = all_kwargs.copy()
+        phase_kwargs.update(dict(vmin=np.percentile(self.phase, 0.1),
+                                 vmax=np.percentile(self.phase, 99.9)))
+
+        fig = None
+        if not all:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1, ::-1], cmap=cmap,
-                          origin='lower', interpolation='nearest',
-                          **phase_kwargs)
+                ax.imshow(self.phase[::-1, ::-1], **phase_kwargs)
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.intensity[::-1, ::-1], cmap=cmap,
-                          origin='lower', interpolation='nearest')
-        else:
-            fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True, sharey=True)
-            ax[0].imshow(self.intensity[::-1, ::-1], cmap=cmap,
-                         origin='lower', interpolation='nearest')
+                ax.imshow(self.intensity[::-1, ::-1], **all_kwargs)
+
+        if fig is None:
+            fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True,
+                                   sharey=True)
+            ax[0].imshow(self.intensity[::-1, ::-1], **all_kwargs)
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1, ::-1], cmap=cmap,
-                         origin='lower', interpolation='nearest',
-                         **phase_kwargs)
+            ax[1].imshow(self.phase[::-1, ::-1], **phase_kwargs)
             ax[1].set(title='Phase')
+
         return fig, ax

@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+
 # astropy package template command:
 from ._astropy_init import *
 

@@ -3,7 +3,7 @@ from __future__ import (absolute_import, division, print_function,
 
 from shampoo import Hologram
 
-hologram_path = 'data/Hologram.tif'
+hologram_path = 'data/USAF_test.tif'
 propagation_distance = 0.03685  # m
 
 h = Hologram.from_tif(hologram_path)
