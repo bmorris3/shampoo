@@ -63,7 +63,6 @@ before_install:
     # Make sure that interactive matplotlib backends work
     # - export DISPLAY=:99.0
     # - sh -e /etc/init.d/xvfb start
-    - pip install pytest --upgrade
 
 install:
 
@@ -89,6 +88,7 @@ install:
     # well as at the start of the install section or in the before_install
     # section if they are needed before setting up conda) to install any
     # other dependencies.
+    - pip install pytest --upgrade
 
 
 script:
