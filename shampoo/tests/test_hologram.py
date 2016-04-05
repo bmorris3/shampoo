@@ -55,7 +55,7 @@ def test_crop_image():
 
     # Odd number rows/cols
     image2 = np.arange(121).reshape((11, 11))
-    new_shape2 = (image2.shape[0]//2 + 1, image2.shape[1]//2 + 1)
+    new_shape2 = (image2.shape[0]//2, image2.shape[1]//2)
     cropped_image2 = _crop_image(image2, 0.5)
     assert new_shape2 == cropped_image2.shape
 
