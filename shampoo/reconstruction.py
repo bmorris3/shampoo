@@ -123,8 +123,8 @@ def _crop_image(image, crop_fraction):
                    .format(crop_fraction, crop_length))
         warnings.warn(message, CropEfficiencyWarning)
 
-    cropped_image = image[crop_length//2:-crop_length//2,
-                          crop_length//2:-crop_length//2]
+    cropped_image = image[crop_length//2:crop_length//2 + crop_length,
+                          crop_length//2:crop_length//2 + crop_length]
     return cropped_image
 
 
