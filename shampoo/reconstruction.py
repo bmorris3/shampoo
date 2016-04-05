@@ -151,7 +151,7 @@ class Hologram(object):
             Rebin the image by factor ``rebin_factor``. Must be an even integer.
         dx : float [meters]
             Pixel width in x-direction (unbinned)
-        dy: float [meters]
+        dy : float [meters]
             Pixel width in y-direction (unbinned)
         """
         self.crop_fraction = crop_fraction
@@ -174,7 +174,7 @@ class Hologram(object):
         self.dy = dy*rebin_factor
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
         self.random_seed = RANDOM_SEED
-        self.digital_phase_mask = None
+        self.hologram_apodized = False
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
@@ -208,7 +208,6 @@ class Hologram(object):
         reconstructed_wave : `~shampoo.reconstruction.ReconstructedWave`
             The reconstructed wave.
         """
-        self.digital_phase_mask = digital_phase_mask
 
         if cache:
             cache_key = make_items_hashable((propagation_distance,
@@ -221,7 +220,7 @@ class Hologram(object):
         # If this reconstruction is not in the cache,
         # or if the cache is turned off, do the reconstruction
         elif (cache and cache_key not in self.reconstructions) or not cache:
-            reconstructed_wave = self.reconstruct_wave(propagation_distance,
+            reconstructed_wave = self.reconstruct_wave(propagation_distance, digital_phase_mask,
                                                        plot_aberration_correction=plot_aberration_correction,
                                                        plot_fourier_peak=plot_fourier_peak)
 
@@ -231,7 +230,7 @@ class Hologram(object):
 
         return ReconstructedWave(reconstructed_wave)
 
-    def reconstruct_wave(self, propagation_distance,
+    def reconstruct_wave(self, propagation_distance, digital_phase_mask=None,
                          plot_aberration_correction=False,
                          plot_fourier_peak=False):
         """
@@ -242,6 +241,8 @@ class Hologram(object):
         ----------
         propagation_distance : float
             Propagation distance [m]
+        digital_phase_mask : `~numpy.ndarray`
+            Use pre-calculated digital phase mask. Default is None.
         plot_aberration_correction : bool
             Plot the abberation correction visualization? Default is False.
         plot_fourier_peak : bool
@@ -262,7 +263,7 @@ class Hologram(object):
         # Create mask based on coords of spectral peak:
         if self.rebin_factor != 1:
             mask_radius = 150./self.rebin_factor
-        elif self.crop_fraction is not None:
+        elif self.crop_fraction is not None and self.crop_fraction != 0:
             mask_radius = 150./abs(np.log(self.crop_fraction)/np.log(2))
         else:
             mask_radius = 150.
@@ -270,31 +271,27 @@ class Hologram(object):
         x_peak, y_peak = self.fourier_peak_centroid(F_hologram, mask_radius,
                                                     plot=plot_fourier_peak)
 
-
         mask = self.real_image_mask(x_peak, y_peak, mask_radius)
 
         # Calculate Fourier transform of impulse response function
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
 
-        if self.digital_phase_mask is None:
+        # if digital_phase_mask is None, calculate one
+        if digital_phase_mask is None:
             # Center the spectral peak
-            shifted_F_hologram = shift_peak(F_hologram*mask,
+            shifted_F_hologram = shift_peak(F_hologram * mask,
                                             [self.n/2-x_peak, self.n/2-y_peak])
 
             # Apodize the result
-            psi = self.apodize(shifted_F_hologram*G)
-            # psi = shifted_F_hologram*G
-
-            # Calculate reference wave
-            self.digital_phase_mask = self.get_digital_phase_mask(psi,
-                                                                  plots=plot_aberration_correction)
+            psi = self.apodize(shifted_F_hologram * G)
+            digital_phase_mask = self.get_digital_phase_mask(psi,
+                                                             plots=plot_aberration_correction)
 
         # Reconstruct the image
-        psi = G*shift_peak(fft2(apodized_hologram * self.digital_phase_mask) * mask,
-                           [self.n/2 - x_peak, self.n/2 - y_peak])
+        psi = G * shift_peak(fft2(apodized_hologram * digital_phase_mask) * mask,
+                             [self.n/2 - x_peak, self.n/2 - y_peak])
 
-        reconstructed_wave = shift_peak(ifft2(psi),
-                                             [self.n/2, self.n/2])
+        reconstructed_wave = shift_peak(ifft2(psi), [self.n/2, self.n/2])
         return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
@@ -361,8 +358,10 @@ class Hologram(object):
             Apodized array
         """
         x, y = self.mgrid
-        arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
-                np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
+        if not self.hologram_apodized:
+            arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
+                   np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
+            self.hologram_apodized = True
         return arr
 
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
@@ -505,7 +504,8 @@ class ReconstructedWave(object):
 
         return self._phase_image
 
-    def plot(self, phase=False, intensity=False, all=False, cmap=plt.cm.binary_r):
+    def plot(self, phase=False, intensity=False, all=False,
+             cmap=plt.cm.binary_r):
         """
         Plot the reconstructed phase and/or intensity images.
 

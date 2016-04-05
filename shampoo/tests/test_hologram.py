@@ -58,3 +58,24 @@ def test_crop_image():
     new_shape2 = (image2.shape[0]//2 + 1, image2.shape[1]//2 + 1)
     cropped_image2 = _crop_image(image2, 0.5)
     assert new_shape2 == cropped_image2.shape
+
+
+def test_multiple_reconstructions():
+    """
+    At commit cc730bd and earlier, the Hologram.apodize function modified
+    the Hologram.hologram array every time Hologram.reconstruct was called.
+    This tests that that should not happen anymore.
+    """
+    holo = Hologram(_example_hologram())
+    h_raw = holo.hologram.copy()
+    w1 = holo.reconstruct(0.5)
+    h_apodized1 = holo.hologram.copy()
+    w2 = holo.reconstruct(0.8)
+    h_apodized2 = holo.hologram.copy()
+
+    # check hologram gets modified in place first time
+    assert not np.all(h_raw == h_apodized1)
+
+    # check hologram doesn't get modified again
+    assert np.all(h_apodized1 == h_apodized2)
+
