@@ -131,6 +131,7 @@ def _crop_image(image, crop_fraction):
 class CropEfficiencyWarning(AstropyUserWarning):
     pass
 
+
 class Hologram(object):
     """
     Container for holograms and methods to reconstruct them.
@@ -257,11 +258,19 @@ class Hologram(object):
 
         # Isolate the real image in Fourier space, find spectral peak
         F_hologram = fft2(apodized_hologram)
-        x_peak, y_peak = self.fourier_peak_centroid(F_hologram,
-                                                    plot=plot_fourier_peak)
 
         # Create mask based on coords of spectral peak:
-        mask_radius = 150./self.rebin_factor
+        if self.rebin_factor != 1:
+            mask_radius = 150./self.rebin_factor
+        elif self.crop_fraction is not None:
+            mask_radius = 150./abs(np.log(self.crop_fraction)/np.log(2))
+        else:
+            mask_radius = 150.
+
+        x_peak, y_peak = self.fourier_peak_centroid(F_hologram, mask_radius,
+                                                    plot=plot_fourier_peak)
+
+
         mask = self.real_image_mask(x_peak, y_peak, mask_radius)
 
         # Calculate Fourier transform of impulse response function
@@ -410,10 +419,16 @@ class Hologram(object):
         x, y = self.mgrid
         mask = np.zeros((self.n, self.n))
         mask[(x-center_x)**2 + (y-center_y)**2 < radius**2] = 1.0
+
+        # exclude corners
+        buffer = 20
+        mask[(x < buffer) | (y < buffer) |
+             (x > len(x) - buffer) | (y > len(y) - buffer)] = 0.0
+
         return mask
     
-    def fourier_peak_centroid(self, fourier_arr, margin_factor=0.1,
-                              plot=False):
+    def fourier_peak_centroid(self, fourier_arr, mask_radius=None,
+                              margin_factor=0.1, plot=False):
         """
         Calculate the centroid of the signal spike in Fourier space near the
         frequencies of the real image.
@@ -441,16 +456,19 @@ class Hologram(object):
                                                 gaussian_width=10) + margin
 
         if plot:
-            fig, ax = plt.subplots(1, 2, figsize=(18, 6))
+            fig, ax = plt.subplots()
+            ax.imshow(np.log(np.abs(fourier_arr)), interpolation='nearest',
+                      origin='lower')
+            ax.plot(spectrum_centroid[1], spectrum_centroid[0], 'o')
 
-            ax[0].imshow(abs_fourier_arr, interpolation='nearest',
-                        origin='lower')
-            ax[0].plot(spectrum_centroid[1]-margin,
-                       spectrum_centroid[0]-margin, 'o')
-
-            ax[1].imshow(np.log(np.abs(fourier_arr)), interpolation='nearest',
-                        origin='lower')
-            ax[1].plot(spectrum_centroid[1], spectrum_centroid[0], 'o')
+            if mask_radius is not None:
+                amp = mask_radius
+                theta = np.linspace(0, 2*np.pi, 100)
+                ax.plot(amp*np.cos(theta) + spectrum_centroid[1],
+                        amp*np.sin(theta) + spectrum_centroid[0],
+                        color='w', lw=2)
+                ax.axvline(20)
+                ax.axhline(20)
             plt.show()
         return spectrum_centroid
 
