@@ -4,6 +4,8 @@ from __future__ import (absolute_import, division, print_function,
 import numpy as np
 from sklearn.cluster import DBSCAN
 
+__all__ = ['cluster_focus_peaks']
+
 
 def cluster_focus_peaks(xyz):
     """
