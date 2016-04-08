@@ -317,7 +317,8 @@ class Hologram(object):
         phase_mask : `~numpy.ndarray`
             Digital phase mask, used for correcting phase aberrations.
         """
-        x, y = self.mgrid - self.n/2
+        # Need to flip mgrid indices for this least squares solution
+        y, x = self.mgrid - self.n/2
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
@@ -325,6 +326,11 @@ class Hologram(object):
         unwrapped_phase_image = unwrap_phase(2*phase_image,
                                              seed=self.random_seed)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
+
+        high = np.percentile(unwrapped_phase_image, 99)
+        low = np.percentile(unwrapped_phase_image, 1)
+        smooth_phase_image[high < unwrapped_phase_image] = high
+        smooth_phase_image[low > unwrapped_phase_image] = low
 
         # Fit the smoothed phase image with a 2nd order polynomial surface with
         # mixed terms using least-squares.
@@ -337,7 +343,8 @@ class Hologram(object):
 
         if plots:
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-            ax[0].imshow(unwrapped_phase_image, origin='lower')
+            #ax[0].imshow(unwrapped_phase_image, origin='lower')
+            ax[0].imshow(smooth_phase_image, origin='lower')
             ax[1].imshow(field_curvature_mask, origin='lower')
             plt.show()
 
