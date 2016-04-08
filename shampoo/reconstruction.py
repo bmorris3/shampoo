@@ -525,7 +525,8 @@ class Hologram(object):
         n_z_slices = len(propagation_distances)
         example_wave = self.reconstruct(propagation_distances[0])
 
-        result_cube = np.zeros((n_z_slices, *example_wave.intensity.shape),
+        wave_shape = example_wave.intensity.shape
+        result_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
                                dtype=np.float64)
 
         def reconstruct_and_cubify(index):
