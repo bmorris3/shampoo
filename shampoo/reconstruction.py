@@ -485,6 +485,8 @@ class Hologram(object):
         """
         Reconstruct phase or intensity for multiple distances, for one hologram.
 
+        Parameters
+        ----------
         propagation_distances : `~numpy.ndarray` or list
             Propagation distances to reconstruct
         threads : int
@@ -498,6 +500,14 @@ class Hologram(object):
         intensity : bool
             Reconstruct phase only. Only one of phase or intensity can be True.
             Default is false.
+
+        Returns
+        -------
+        result_cube `~numpy.ndarray`
+            Reconstructed phase or intensity images for each propagation
+            distance in a data cube of dimensions (N, m, m) where N is the
+            number of propagation distances and m is the number of pixels on
+            each axis of each reconstruction.
         """
         if phase and intensity:
             raise ValueError("Only phase or intensity may be saved")
