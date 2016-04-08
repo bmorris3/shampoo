@@ -12,7 +12,10 @@ are applied [2]_.
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+import sys
 import warnings
+from multiprocessing.dummy import Pool as ThreadPool
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from skimage.restoration import unwrap_phase
@@ -20,7 +23,6 @@ from skimage.io import imread
 from astropy.utils.exceptions import AstropyUserWarning
 
 # Use the 'agg' backend if on Linux
-import sys
 import matplotlib
 import matplotlib.pyplot as plt
 if 'linux' in sys.platform:
@@ -477,6 +479,58 @@ class Hologram(object):
                 ax.axhline(20)
             plt.show()
         return spectrum_centroid
+
+    def reconstruct_multithread(self, propagation_distances, threads=8,
+                                save_to_disk=None, phase=True, intensity=False):
+        """
+        Reconstruct phase or intensity for multiple distances, for one hologram.
+
+        propagation_distances : `~numpy.ndarray` or list
+            Propagation distances to reconstruct
+        threads : int
+            Number of threads to use via `~multiprocessing`
+        save_to_disk : None or path
+            If ``None``, do not save reconstructions to disk. If string,
+            save reconstructions to disk at the path ``save_to_disk``.
+        phase : bool
+            Reconstruct phase only. Only one of phase or intensity can be True.
+            Default is True.
+        intensity : bool
+            Reconstruct phase only. Only one of phase or intensity can be True.
+            Default is false.
+        """
+        if phase and intensity:
+            raise ValueError("Only phase or intensity may be saved")
+
+        if phase:
+            # Collect only the phase or intensity
+            collect_attr = 'phase'
+        elif intensity:
+            collect_attr = 'intensity'
+        else:
+            raise ValueError("I think you want to reconstruct something. "
+                             "Set either phase or intensity to True to "
+                             "reconstruct.")
+
+        n_z_slices = len(propagation_distances)
+        example_wave = self.reconstruct(propagation_distances[0])
+
+        result_cube = np.zeros((n_z_slices, *example_wave.intensity.shape),
+                               dtype=np.float64)
+
+        def reconstruct_and_cubify(index):
+            wave = self.reconstruct(propagation_distances[index])
+            result_cube[index, ...] = getattr(wave, collect_attr)
+
+        # Make the Pool of workers
+        pool = ThreadPool(threads)
+        pool.map(reconstruct_and_cubify, range(n_z_slices))
+
+        # close the pool and wait for the work to finish
+        pool.close()
+        pool.join()
+
+        return result_cube
 
 
 class ReconstructedWave(object):
