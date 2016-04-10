@@ -5,7 +5,6 @@ from ..reconstruction import (Hologram, rebin_image, _find_peak_centroid,
                               RANDOM_SEED, _crop_image, CropEfficiencyWarning)
 
 import numpy as np
-import pytest
 np.random.seed(RANDOM_SEED)
 
 
