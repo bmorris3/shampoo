@@ -20,7 +20,7 @@ def glue_focus(xyz, labels):
     from glue_vispy_viewers.scatter.scatter_viewer import VispyScatterViewer
 
     data = Data(x=xyz[:, 0], y=xyz[:, 1], z=xyz[:, 2],
-                l=labels, label='data')
+                clusters=labels, label='data')
     dc = DataCollection([data])
 
     # create a GUI session
