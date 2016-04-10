@@ -12,7 +12,10 @@ are applied [2]_.
 """
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
+import sys
 import warnings
+from multiprocessing.dummy import Pool as ThreadPool
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
 from skimage.restoration import unwrap_phase
@@ -20,7 +23,6 @@ from skimage.io import imread
 from astropy.utils.exceptions import AstropyUserWarning
 
 # Use the 'agg' backend if on Linux
-import sys
 import matplotlib
 import matplotlib.pyplot as plt
 if 'linux' in sys.platform:
@@ -317,7 +319,8 @@ class Hologram(object):
         phase_mask : `~numpy.ndarray`
             Digital phase mask, used for correcting phase aberrations.
         """
-        x, y = self.mgrid - self.n/2
+        # Need to flip mgrid indices for this least squares solution
+        y, x = self.mgrid - self.n/2
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
@@ -325,6 +328,11 @@ class Hologram(object):
         unwrapped_phase_image = unwrap_phase(2*phase_image,
                                              seed=self.random_seed)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
+
+        high = np.percentile(unwrapped_phase_image, 99)
+        low = np.percentile(unwrapped_phase_image, 1)
+        smooth_phase_image[high < unwrapped_phase_image] = high
+        smooth_phase_image[low > unwrapped_phase_image] = low
 
         # Fit the smoothed phase image with a 2nd order polynomial surface with
         # mixed terms using least-squares.
@@ -337,7 +345,8 @@ class Hologram(object):
 
         if plots:
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-            ax[0].imshow(unwrapped_phase_image, origin='lower')
+            #ax[0].imshow(unwrapped_phase_image, origin='lower')
+            ax[0].imshow(smooth_phase_image, origin='lower')
             ax[1].imshow(field_curvature_mask, origin='lower')
             plt.show()
 
@@ -470,6 +479,69 @@ class Hologram(object):
                 ax.axhline(20)
             plt.show()
         return spectrum_centroid
+
+    def reconstruct_multithread(self, propagation_distances, threads=8,
+                                save_to_disk=None, phase=True, intensity=False):
+        """
+        Reconstruct phase or intensity for multiple distances, for one hologram.
+
+        Parameters
+        ----------
+        propagation_distances : `~numpy.ndarray` or list
+            Propagation distances to reconstruct
+        threads : int
+            Number of threads to use via `~multiprocessing`
+        save_to_disk : None or path
+            If ``None``, do not save reconstructions to disk. If string,
+            save reconstructions to disk at the path ``save_to_disk``.
+        phase : bool
+            Reconstruct phase only. Only one of phase or intensity can be True.
+            Default is True.
+        intensity : bool
+            Reconstruct phase only. Only one of phase or intensity can be True.
+            Default is false.
+
+        Returns
+        -------
+        result_cube `~numpy.ndarray`
+            Reconstructed phase or intensity images for each propagation
+            distance in a data cube of dimensions (N, m, m) where N is the
+            number of propagation distances and m is the number of pixels on
+            each axis of each reconstruction.
+        """
+        if phase and intensity:
+            raise ValueError("Only phase or intensity may be saved")
+
+        if phase:
+            # Collect only the phase or intensity
+            collect_attr = 'phase'
+        elif intensity:
+            collect_attr = 'intensity'
+        else:
+            raise ValueError("I think you want to reconstruct something. "
+                             "Set either phase or intensity to True to "
+                             "reconstruct.")
+
+        n_z_slices = len(propagation_distances)
+        example_wave = self.reconstruct(propagation_distances[0])
+
+        wave_shape = example_wave.intensity.shape
+        result_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
+                               dtype=np.float64)
+
+        def reconstruct_and_cubify(index):
+            wave = self.reconstruct(propagation_distances[index])
+            result_cube[index, ...] = getattr(wave, collect_attr)
+
+        # Make the Pool of workers
+        pool = ThreadPool(threads)
+        pool.map(reconstruct_and_cubify, range(n_z_slices))
+
+        # close the pool and wait for the work to finish
+        pool.close()
+        pool.join()
+
+        return result_cube
 
 
 class ReconstructedWave(object):
