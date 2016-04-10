@@ -18,9 +18,13 @@ from multiprocessing.dummy import Pool as ThreadPool
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
+
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
+from skimage.feature import blob_doh
+
 from astropy.utils.exceptions import AstropyUserWarning
+from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
 # Use the 'agg' backend if on Linux
 import matplotlib
@@ -503,11 +507,14 @@ class Hologram(object):
 
         Returns
         -------
-        result_cube `~numpy.ndarray`
+        result_cube : `~numpy.ndarray`
             Reconstructed phase or intensity images for each propagation
             distance in a data cube of dimensions (N, m, m) where N is the
             number of propagation distances and m is the number of pixels on
             each axis of each reconstruction.
+
+        positions : `~numpy.ndarray`
+            (x, y, z) positions of particles detected through the z-stack
         """
         if phase and intensity:
             raise ValueError("Only phase or intensity may be saved")
@@ -529,19 +536,46 @@ class Hologram(object):
         result_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
                                dtype=np.float64)
 
-        def reconstruct_and_cubify(index):
+        blob_collection = []
+
+        def reconstruct_and_locate(index, margin=100, kernel_radius=4.0):
+            # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
-            result_cube[index, ...] = getattr(wave, collect_attr)
+            img = getattr(wave, collect_attr)
+            result_cube[index, ...] = img
+
+            # Crop reconstructed image, convolve, peak-find
+            cropped_img = img[margin:-margin, margin:-margin]
+            best_convolved_phase = convolve_fft(cropped_img,
+                                                MexicanHat2DKernel(kernel_radius))
+            blobs = blob_doh(best_convolved_phase.copy(order='C'),
+                             min_sigma=1, max_sigma=30,
+                             threshold=0.00003)
+            # Blobs get returned in rows with [x, y, radius], so save each
+            # set of blobs with the propagation distance to record z
+            blob_collection.append((np.float64(blobs),
+                                    propagation_distances[index]))
 
         # Make the Pool of workers
         pool = ThreadPool(threads)
-        pool.map(reconstruct_and_cubify, range(n_z_slices))
+        pool.map(reconstruct_and_locate, range(n_z_slices))
 
         # close the pool and wait for the work to finish
         pool.close()
         pool.join()
 
-        return result_cube
+        # Get all detected cell positions
+        positions = []
+        for blobs_and_z in blob_collection:
+            blobs, z = blobs_and_z
+            if len(blobs.shape) > 1:
+                # Replace the blob radii with the z position
+                blobs[:, 2] = z
+                positions.append(blobs)
+
+        positions = np.vstack(positions)
+
+        return result_cube, positions
 
 
 class ReconstructedWave(object):
