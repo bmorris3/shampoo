@@ -16,6 +16,8 @@ import sys
 import warnings
 from multiprocessing.dummy import Pool as ThreadPool
 
+from .vis import save_scaled_image
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
 
@@ -485,7 +487,8 @@ class Hologram(object):
         return spectrum_centroid
 
     def reconstruct_multithread(self, propagation_distances, threads=8,
-                                save_to_disk=None, phase=True, intensity=False):
+                                save_png_to_disk=None, phase=True,
+                                intensity=False):
         """
         Reconstruct phase or intensity for multiple distances, for one hologram.
 
@@ -495,7 +498,7 @@ class Hologram(object):
             Propagation distances to reconstruct
         threads : int
             Number of threads to use via `~multiprocessing`
-        save_to_disk : None or path
+        save_png_to_disk : None or path
             If ``None``, do not save reconstructions to disk. If string,
             save reconstructions to disk at the path ``save_to_disk``.
         phase : bool
@@ -548,12 +551,43 @@ class Hologram(object):
             cropped_img = img[margin:-margin, margin:-margin]
             best_convolved_phase = convolve_fft(cropped_img,
                                                 MexicanHat2DKernel(kernel_radius))
-            blobs = blob_doh(best_convolved_phase.copy(order='C'),
+
+            best_convolved_phase_copy = best_convolved_phase.copy(order='C')
+
+            # Find positive peaks
+            blobs = blob_doh(best_convolved_phase_copy,
                              min_sigma=1, max_sigma=30,
-                             threshold=0.00003)
+                             threshold=0.0001)
+                             #threshold=0.00003)
+            # Find negative peaks
+            negative_phase = -best_convolved_phase_copy
+            negative_phase += (np.median(best_convolved_phase_copy) -
+                               np.median(negative_phase))
+            negative_blobs = blob_doh(-best_convolved_phase_copy,
+                                      min_sigma=1, max_sigma=30,
+                                      threshold=0.0001)
+
+            all_blobs = []
+            for blob in blobs:
+                if blob.size > 0:
+                    all_blobs.append(blob)
+
+            for neg_blob in negative_blobs:
+                if neg_blob.size > 0:
+                    all_blobs.append(neg_blob)
+
+            if len(all_blobs) > 0:
+                all_blobs = np.vstack(all_blobs)
+
+            # If save pngs:
+            if save_png_to_disk is not None:
+                path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                                propagation_distances[index])
+                save_scaled_image(img, path, all_blobs, margin)
+
             # Blobs get returned in rows with [x, y, radius], so save each
             # set of blobs with the propagation distance to record z
-            blob_collection.append((np.float64(blobs),
+            blob_collection.append((np.float64(all_blobs),
                                     propagation_distances[index]))
 
         # Make the Pool of workers
