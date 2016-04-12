@@ -547,8 +547,8 @@ class Hologram(object):
                                dtype=np.complex128)
 
         blob_collection = []
-
-        def reconstruct_and_locate(index, margin=100, kernel_radius=4.0):
+        margin = 100
+        def reconstruct_and_locate(index, margin=margin, kernel_radius=4.0):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
             wave_cube[index, ...] = wave.reconstructed_wave
@@ -589,7 +589,7 @@ class Hologram(object):
                 if save_png_to_disk is not None:
                     path = "{0}/{1:.4f}.png".format(save_png_to_disk,
                                                     propagation_distances[index])
-                    save_scaled_image(wave.phase, path, all_blobs, margin)
+                    save_scaled_image(wave.phase, path, margin, all_blobs)
 
                 # Blobs get returned in rows with [x, y, radius], so save each
                 # set of blobs with the propagation distance to record z
@@ -612,6 +612,8 @@ class Hologram(object):
                 if len(blobs.shape) > 1:
                     # Replace the blob radii with the z position
                     blobs[:, 2] = z
+                    blobs[:, 1] += margin
+                    blobs[:, 0] += margin
                     positions.append(blobs)
 
             positions = np.vstack(positions)
@@ -676,8 +678,7 @@ class ReconstructedWave(object):
             Axis
         """
 
-        all_kwargs = dict(origin='lower', interpolation='nearest',
-                          cmap=cmap)
+        all_kwargs = dict(origin='lower', interpolation='nearest', cmap=cmap)
 
         phase_kwargs = all_kwargs.copy()
         phase_kwargs.update(dict(vmin=np.percentile(self.phase, 0.1),
@@ -687,17 +688,17 @@ class ReconstructedWave(object):
         if not all:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1, ::-1], **phase_kwargs)
+                ax.imshow(self.phase, **phase_kwargs)
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.intensity[::-1, ::-1], **all_kwargs)
+                ax.imshow(self.intensity, **all_kwargs)
 
         if fig is None:
             fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True,
                                    sharey=True)
-            ax[0].imshow(self.intensity[::-1, ::-1], **all_kwargs)
+            ax[0].imshow(self.intensity, **all_kwargs)
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1, ::-1], **phase_kwargs)
+            ax[1].imshow(self.phase, **phase_kwargs)
             ax[1].set(title='Phase')
 
         return fig, ax

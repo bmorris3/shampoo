@@ -1,6 +1,8 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
+from .reconstruction import ReconstructedWave
+
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.cluster import DBSCAN
@@ -37,7 +39,7 @@ def cluster_focus_peaks(xyz, eps=5, min_samples=3):
     return labels
 
 
-def find_focus_plane(complex_cube, focus_on='amplitude', plot=False):
+def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
     """
     Find focus plane in a cube of reconstructed waves at different propagation
     distances.
@@ -51,7 +53,7 @@ def find_focus_plane(complex_cube, focus_on='amplitude', plot=False):
 
     Parameters
     ----------
-    complex_cube : `~numpy.ndarray`
+    roi_cube : `~numpy.ndarray`
         Reconstructed waves at ``N`` propagation distances with ``M`` by ``M``
         pixels, with a shape of ``(N, M, M)``
     focus_on : {"amplitude", "phase"} (optional)
@@ -71,11 +73,12 @@ def find_focus_plane(complex_cube, focus_on='amplitude', plot=False):
                          '"amplitude".')
 
     # Following Equation 9, 10 of Dubois et al. 2006:
-    integral_abs_wave = np.sum(np.abs(complex_cube), axis=(1, 2))
+    integral_abs_wave = np.sum(np.abs(roi_cube), axis=(1, 2))
     focus_index = extremum(integral_abs_wave)
 
     if plot:
         plt.figure()
-        plt.plot(range(complex_cube.shape[0]), integral_abs_wave)
-        plt.axvline(focus_index, '--')
+        plt.plot(range(roi_cube.shape[0]), integral_abs_wave)
+        plt.axvline(focus_index, ls='--')
+
     return focus_index
