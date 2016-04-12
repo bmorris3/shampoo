@@ -16,11 +16,18 @@ import sys
 import warnings
 from multiprocessing.dummy import Pool as ThreadPool
 
+from .vis import save_scaled_image
+
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from scipy.signal import tukey
+
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
+from skimage.feature import blob_doh
+
 from astropy.utils.exceptions import AstropyUserWarning
+from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
 # Use the 'agg' backend if on Linux
 import matplotlib
@@ -352,7 +359,7 @@ class Hologram(object):
 
         return digital_phase_mask
 
-    def apodize(self, arr):
+    def apodize(self, arr, alpha=0.075):
         """
         Force the magnitude of an array to go to zero at the boundaries.
 
@@ -360,6 +367,9 @@ class Hologram(object):
         ----------
         arr : `~numpy.ndarray`
             Array to apodize
+        alpha : float between zero and one
+            Alpha parameter for the Tukey window function. For best results,
+            keep between 0.075 and 0.2.
 
         Returns
         -------
@@ -367,9 +377,11 @@ class Hologram(object):
             Apodized array
         """
         x, y = self.mgrid
+        n = len(x[0])
         if not self.hologram_apodized:
-            arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
-                   np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
+            tukey_window = tukey(n, alpha)
+            arr *= tukey_window[:, np.newaxis] * tukey_window
+
             self.hologram_apodized = True
         return arr
 
@@ -481,7 +493,8 @@ class Hologram(object):
         return spectrum_centroid
 
     def reconstruct_multithread(self, propagation_distances, threads=8,
-                                save_to_disk=None, phase=True, intensity=False):
+                                track_objects=True, save_png_to_disk=None,
+                                phase=True, intensity=False):
         """
         Reconstruct phase or intensity for multiple distances, for one hologram.
 
@@ -491,7 +504,9 @@ class Hologram(object):
             Propagation distances to reconstruct
         threads : int
             Number of threads to use via `~multiprocessing`
-        save_to_disk : None or path
+        track_objects : bool
+            Track objects (cells)? Default is True.
+        save_png_to_disk : None or path
             If ``None``, do not save reconstructions to disk. If string,
             save reconstructions to disk at the path ``save_to_disk``.
         phase : bool
@@ -503,11 +518,13 @@ class Hologram(object):
 
         Returns
         -------
-        result_cube `~numpy.ndarray`
-            Reconstructed phase or intensity images for each propagation
-            distance in a data cube of dimensions (N, m, m) where N is the
-            number of propagation distances and m is the number of pixels on
-            each axis of each reconstruction.
+        wave_cube : `~numpy.ndarray`
+            Reconstructed waves for each propagation distance in a data cube of
+            dimensions (N, m, m) where N is the number of propagation distances
+            and m is the number of pixels on each axis of each reconstruction.
+
+        positions : `~numpy.ndarray`
+            (x, y, z) positions of particles detected through the z-stack
         """
         if phase and intensity:
             raise ValueError("Only phase or intensity may be saved")
@@ -526,22 +543,84 @@ class Hologram(object):
         example_wave = self.reconstruct(propagation_distances[0])
 
         wave_shape = example_wave.intensity.shape
-        result_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
-                               dtype=np.float64)
+        wave_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
+                               dtype=np.complex128)
 
-        def reconstruct_and_cubify(index):
+        blob_collection = []
+        margin = 100
+        def reconstruct_and_locate(index, margin=margin, kernel_radius=4.0):
+            # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
-            result_cube[index, ...] = getattr(wave, collect_attr)
+            wave_cube[index, ...] = wave.reconstructed_wave
+
+            if track_objects:
+                # Crop reconstructed image, convolve, peak-find
+                cropped_img = wave.phase[margin:-margin, margin:-margin]
+                best_convolved_phase = convolve_fft(cropped_img,
+                                                    MexicanHat2DKernel(kernel_radius))
+
+                best_convolved_phase_copy = best_convolved_phase.copy(order='C')
+
+                # Find positive peaks
+                blob_doh_kwargs = dict(threshold=0.00007,
+                                       min_sigma=2,
+                                       max_sigma=10)
+                blobs = blob_doh(best_convolved_phase_copy, **blob_doh_kwargs)
+
+                # Find negative peaks
+                negative_phase = -best_convolved_phase_copy
+                negative_phase += (np.median(best_convolved_phase_copy) -
+                                   np.median(negative_phase))
+                negative_blobs = blob_doh(negative_phase, **blob_doh_kwargs)
+
+                all_blobs = []
+                for blob in blobs:
+                    if blob.size > 0:
+                        all_blobs.append(blob)
+
+                for neg_blob in negative_blobs:
+                    if neg_blob.size > 0:
+                        all_blobs.append(neg_blob)
+
+                if len(all_blobs) > 0:
+                    all_blobs = np.vstack(all_blobs)
+
+                # If save pngs:
+                if save_png_to_disk is not None:
+                    path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                                    propagation_distances[index])
+                    save_scaled_image(wave.phase, path, margin, all_blobs)
+
+                # Blobs get returned in rows with [x, y, radius], so save each
+                # set of blobs with the propagation distance to record z
+                blob_collection.append((np.float64(all_blobs),
+                                        propagation_distances[index]))
 
         # Make the Pool of workers
         pool = ThreadPool(threads)
-        pool.map(reconstruct_and_cubify, range(n_z_slices))
+        pool.map(reconstruct_and_locate, range(n_z_slices))
 
         # close the pool and wait for the work to finish
         pool.close()
         pool.join()
 
-        return result_cube
+        if track_objects:
+            # Get all detected cell positions
+            positions = []
+            for blobs_and_z in blob_collection:
+                blobs, z = blobs_and_z
+                if len(blobs.shape) > 1:
+                    # Replace the blob radii with the z position
+                    blobs[:, 2] = z
+                    blobs[:, 1] += margin
+                    blobs[:, 0] += margin
+                    positions.append(blobs)
+
+            positions = np.vstack(positions)
+        else:
+            positions = None
+
+        return wave_cube, positions
 
 
 class ReconstructedWave(object):
@@ -599,8 +678,7 @@ class ReconstructedWave(object):
             Axis
         """
 
-        all_kwargs = dict(origin='lower', interpolation='nearest',
-                          cmap=cmap)
+        all_kwargs = dict(origin='lower', interpolation='nearest', cmap=cmap)
 
         phase_kwargs = all_kwargs.copy()
         phase_kwargs.update(dict(vmin=np.percentile(self.phase, 0.1),
@@ -610,17 +688,17 @@ class ReconstructedWave(object):
         if not all:
             if phase and not intensity:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.phase[::-1, ::-1], **phase_kwargs)
+                ax.imshow(self.phase, **phase_kwargs)
             elif intensity and not phase:
                 fig, ax = plt.subplots(figsize=(10,10))
-                ax.imshow(self.intensity[::-1, ::-1], **all_kwargs)
+                ax.imshow(self.intensity, **all_kwargs)
 
         if fig is None:
             fig, ax = plt.subplots(1, 2, figsize=(18,8), sharex=True,
                                    sharey=True)
-            ax[0].imshow(self.intensity[::-1, ::-1], **all_kwargs)
+            ax[0].imshow(self.intensity, **all_kwargs)
             ax[0].set(title='Intensity')
-            ax[1].imshow(self.phase[::-1, ::-1], **phase_kwargs)
+            ax[1].imshow(self.phase, **phase_kwargs)
             ax[1].set(title='Phase')
 
         return fig, ax
