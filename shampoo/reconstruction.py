@@ -20,6 +20,7 @@ from .vis import save_scaled_image
 
 import numpy as np
 from scipy.ndimage import gaussian_filter
+from scipy.signal import tukey
 
 from skimage.restoration import unwrap_phase
 from skimage.io import imread
@@ -358,7 +359,7 @@ class Hologram(object):
 
         return digital_phase_mask
 
-    def apodize(self, arr):
+    def apodize(self, arr, alpha=0.075):
         """
         Force the magnitude of an array to go to zero at the boundaries.
 
@@ -366,6 +367,9 @@ class Hologram(object):
         ----------
         arr : `~numpy.ndarray`
             Array to apodize
+        alpha : float between zero and one
+            Alpha parameter for the Tukey window function. For best results,
+            keep between 0.075 and 0.2.
 
         Returns
         -------
@@ -373,9 +377,11 @@ class Hologram(object):
             Apodized array
         """
         x, y = self.mgrid
+        n = len(x[0])
         if not self.hologram_apodized:
-            arr *= (np.sqrt(np.cos((x-self.n/2.)*np.pi/self.n)) *
-                   np.sqrt(np.cos((y-self.n/2.)*np.pi/self.n)))
+            tukey_window = tukey(n, alpha)
+            arr *= tukey_window[:, np.newaxis] * tukey_window
+
             self.hologram_apodized = True
         return arr
 
@@ -512,11 +518,10 @@ class Hologram(object):
 
         Returns
         -------
-        result_cube : `~numpy.ndarray`
-            Reconstructed phase or intensity images for each propagation
-            distance in a data cube of dimensions (N, m, m) where N is the
-            number of propagation distances and m is the number of pixels on
-            each axis of each reconstruction.
+        wave_cube : `~numpy.ndarray`
+            Reconstructed waves for each propagation distance in a data cube of
+            dimensions (N, m, m) where N is the number of propagation distances
+            and m is the number of pixels on each axis of each reconstruction.
 
         positions : `~numpy.ndarray`
             (x, y, z) positions of particles detected through the z-stack
@@ -538,41 +543,35 @@ class Hologram(object):
         example_wave = self.reconstruct(propagation_distances[0])
 
         wave_shape = example_wave.intensity.shape
-        result_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
-                               dtype=np.float64)
-
-        result_cube_complex = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
-                               dtype=np.complex64)
+        wave_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
+                               dtype=np.complex128)
 
         blob_collection = []
 
         def reconstruct_and_locate(index, margin=100, kernel_radius=4.0):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
-            img = getattr(wave, collect_attr)
-            result_cube[index, ...] = img
-            result_cube_complex[index, ...] = wave.reconstructed_wave
+            wave_cube[index, ...] = wave.reconstructed_wave
 
             if track_objects:
                 # Crop reconstructed image, convolve, peak-find
-                cropped_img = img[margin:-margin, margin:-margin]
+                cropped_img = wave.phase[margin:-margin, margin:-margin]
                 best_convolved_phase = convolve_fft(cropped_img,
                                                     MexicanHat2DKernel(kernel_radius))
 
                 best_convolved_phase_copy = best_convolved_phase.copy(order='C')
 
                 # Find positive peaks
-                blobs = blob_doh(best_convolved_phase_copy,
-                                 min_sigma=1, max_sigma=30,
-                                 threshold=0.0001)
-                                 #threshold=0.00003)
+                blob_doh_kwargs = dict(threshold=0.00007,
+                                       min_sigma=2,
+                                       max_sigma=10)
+                blobs = blob_doh(best_convolved_phase_copy, **blob_doh_kwargs)
+
                 # Find negative peaks
                 negative_phase = -best_convolved_phase_copy
                 negative_phase += (np.median(best_convolved_phase_copy) -
                                    np.median(negative_phase))
-                negative_blobs = blob_doh(-best_convolved_phase_copy,
-                                          min_sigma=1, max_sigma=30,
-                                          threshold=0.0001)
+                negative_blobs = blob_doh(negative_phase, **blob_doh_kwargs)
 
                 all_blobs = []
                 for blob in blobs:
@@ -590,7 +589,7 @@ class Hologram(object):
                 if save_png_to_disk is not None:
                     path = "{0}/{1:.4f}.png".format(save_png_to_disk,
                                                     propagation_distances[index])
-                    save_scaled_image(img, path, all_blobs, margin)
+                    save_scaled_image(wave.phase, path, all_blobs, margin)
 
                 # Blobs get returned in rows with [x, y, radius], so save each
                 # set of blobs with the propagation distance to record z
@@ -619,7 +618,7 @@ class Hologram(object):
         else:
             positions = None
 
-        return result_cube_complex, result_cube, positions
+        return wave_cube, positions
 
 
 class ReconstructedWave(object):
