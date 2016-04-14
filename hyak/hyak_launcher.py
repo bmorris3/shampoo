@@ -28,14 +28,16 @@ for i, split_hologram_indices in enumerate(hologram_index_groups):
     hologram_paths = [raw_hologram_paths[j] for j in split_hologram_indices]
 
     # Create input jobs to pipe to "parallel" command:
-    command_list_path = 'command_list_{0:02d}.txt'.format(i)
+    command_list_path = os.path.join(output_dir,
+                                     'command_list_{0:02d}.txt'.format(i))
     with open(command_list_path, 'w') as command_file:
         for holo_path in hologram_paths:
             line = "{0} {1} {2} {3}\n".format(python_path, python_script,
                                               holo_path, output_dir)
             command_file.write(line)
 
-    submit_script_name = 'submit_script_{0:02d}.sh'.format(i)
+    submit_script_name = os.path.join(output_dir,
+                                      'submit_script_{0:02d}.sh'.format(i))
 
     submit_script = submit_template.format(job_name="shampoo_test",
                                            run_dir=output_dir,
