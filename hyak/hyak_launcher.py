@@ -6,7 +6,7 @@ from glob import glob
 
 python_path = '/usr/lusers/bmmorris/miniconda2/bin/python'
 data_dir = '/gscratch/stf/bmmorris/shamu/2015.12.15_17-47'
-outputs_dir = '/gscratch/stf/bmmorris/shamu/outputs'
+output_dir = '/gscratch/stf/bmmorris/shamu/outputs'
 python_script = '/usr/lusers/bmmorris/git/shampoo/hyak/hyak_jobs.py'
 raw_hologram_paths = sorted(glob(os.path.join(data_dir, '*_holo.tif')))
 

@@ -7,7 +7,9 @@ sys.path.insert(0, '/usr/lusers/bmmorris/git/shampoo/')
 
 import numpy as np
 from shampoo import Hologram, cluster_focus_peaks, locate_specimens
+import datetime
 
+print('Beginning task: ', sys.argv, datetime.datetime.utcnow())
 hologram_path = sys.argv[1]
 hologram_index = os.path.basename(hologram_path).split('_holo.tif')[0]
 output_dir = sys.argv[2]
@@ -36,8 +38,7 @@ if not os.path.exists(coords_path):
     positions_for_clustering[:, 2] /= 10
     labels = cluster_focus_peaks(positions_for_clustering)
 
-    coords = locate_specimens(wave_cube, positions, labels, distances,
-                              plots=True)
+    coords = locate_specimens(wave_cube, positions, labels, distances)
 
     # Save outputs
     np.savetxt(positions_path, positions)
