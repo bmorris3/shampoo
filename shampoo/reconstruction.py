@@ -30,10 +30,7 @@ from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
 # Use the 'agg' backend if on Linux
-import matplotlib
 import matplotlib.pyplot as plt
-if 'linux' in sys.platform:
-    matplotlib.use('agg')
 
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
 # fails, import scipy's FFT module instead
