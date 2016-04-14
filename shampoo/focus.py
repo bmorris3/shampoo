@@ -132,7 +132,7 @@ def locate_specimens(wave_cube, positions, labels, distances, plots=False):
             xmin, xmax, x_range = _correct_limits(xmin, xmax, x_range,
                                                   wave_cube.shape[1])
             ymin, ymay, y_range = _correct_limits(ymin, ymax, y_range,
-                                                  wave_cube.shape[0])
+                                                  wave_cube.shape[2])
             zmin, zmaz, z_range = _correct_limits(zmin, zmax, z_range,
                                                   wave_cube.shape[0])
 
