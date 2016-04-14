@@ -622,6 +622,57 @@ class Hologram(object):
 
         return wave_cube, positions
 
+    def detect_specimens(self, reconstructed_wave, propagation_distance,
+                         margin=100, kernel_radius=4.0, save_png_to_disk=None):
+        cropped_img = reconstructed_wave.phase[margin:-margin, margin:-margin]
+        best_convolved_phase = convolve_fft(cropped_img,
+                                            MexicanHat2DKernel(kernel_radius))
+
+        best_convolved_phase_copy = best_convolved_phase.copy(order='C')
+
+        # Find positive peaks
+        blob_doh_kwargs = dict(threshold=0.00007,
+                               min_sigma=2,
+                               max_sigma=10)
+        blobs = blob_doh(best_convolved_phase_copy, **blob_doh_kwargs)
+
+        # Find negative peaks
+        negative_phase = -best_convolved_phase_copy
+        negative_phase += (np.median(best_convolved_phase_copy) -
+                           np.median(negative_phase))
+        negative_blobs = blob_doh(negative_phase, **blob_doh_kwargs)
+
+        all_blobs = []
+        for blob in blobs:
+            if blob.size > 0:
+                all_blobs.append(blob)
+
+        for neg_blob in negative_blobs:
+            if neg_blob.size > 0:
+                all_blobs.append(neg_blob)
+
+        if len(all_blobs) > 0:
+            all_blobs = np.vstack(all_blobs)
+
+        # If save pngs:
+        if save_png_to_disk is not None:
+            path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                            propagation_distance)
+            save_scaled_image(reconstructed_wave.phase, path, margin, all_blobs)
+
+        # Blobs get returned in rows with [x, y, radius], so save each
+        # set of blobs with the propagation distance to record z
+
+        # correct blob positions for margin:
+        all_blobs = np.float64(all_blobs)
+        if len(all_blobs) > 0:
+            all_blobs[:, 0] += margin
+            all_blobs[:, 1] += margin
+            all_blobs[:, 2] = propagation_distance
+            return all_blobs
+        else:
+            return None
+
 
 class ReconstructedWave(object):
     """
