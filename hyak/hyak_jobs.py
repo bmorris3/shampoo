@@ -18,7 +18,7 @@ coords_path = os.path.join(output_dir, hologram_index+'_coords.txt')
 
 # Check that this hologram hasn't been done yet:
 if not os.path.exists(coords_path):
-    n_z_slices = 200
+    n_z_slices = 150
     distances = np.linspace(0.09, 0.14, n_z_slices)
 
     h = Hologram.from_tif(hologram_path, crop_fraction=2**-1)
