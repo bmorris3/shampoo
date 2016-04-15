@@ -29,7 +29,6 @@ from skimage.feature import blob_doh
 from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
-# Use the 'agg' backend if on Linux
 import matplotlib.pyplot as plt
 
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
