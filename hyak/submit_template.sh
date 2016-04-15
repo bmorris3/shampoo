@@ -41,13 +41,16 @@
 ## Disable regcache
 export MX_RCACHE=0
 
+## Prevent numpy from multithreading
+export OPENBLAS_NUM_THREADS=1
+
 ## --------------------------------------------------------
 ## END of PBS commands ... only BASH from here and below
 ## --------------------------------------------------------
 
 ## LOAD any appropriate environment modules and variables
-module load gcc_4.4.7-impi_5.1.2
-module load anaconda_2.4
+## module load gcc_4.4.7-impi_5.1.2
+## module load anaconda_2.4
 
 ### Debugging information
 ### Include your job logs which contain output from the below commands
