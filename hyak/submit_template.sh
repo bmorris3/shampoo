@@ -43,6 +43,7 @@ export MX_RCACHE=0
 
 ## Prevent numpy from multithreading
 export OPENBLAS_NUM_THREADS=1
+export OMP_NUM_THREADS=1
 
 ## --------------------------------------------------------
 ## END of PBS commands ... only BASH from here and below
