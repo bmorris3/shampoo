@@ -34,11 +34,11 @@ import matplotlib.pyplot as plt
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
 # fails, import scipy's FFT module instead
 try:
-   from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
+    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
-__all__ = ['Hologram', 'ReconstructedWave']
+__all__ = ['Hologram', 'ReconstructedWave', 'unwrap_phase']
 RANDOM_SEED = 42
 TWO_TO_N = [2**i for i in range(13)]
 
@@ -327,13 +327,12 @@ class Hologram(object):
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
-        phase_image = np.arctan(np.imag(inverse_psi)/np.real(inverse_psi))
-        unwrapped_phase_image = unwrap_phase(2*phase_image,
-                                             seed=self.random_seed)/2/self.wavenumber
+        unwrapped_phase_image = unwrap_phase(inverse_psi)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
 
         high = np.percentile(unwrapped_phase_image, 99)
         low = np.percentile(unwrapped_phase_image, 1)
+
         smooth_phase_image[high < unwrapped_phase_image] = high
         smooth_phase_image[low > unwrapped_phase_image] = low
 
@@ -347,6 +346,7 @@ class Hologram(object):
         digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
+            print(smooth_phase_image)
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
             #ax[0].imshow(unwrapped_phase_image, origin='lower')
             ax[0].imshow(smooth_phase_image, origin='lower')
