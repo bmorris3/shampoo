@@ -38,8 +38,9 @@ if not os.path.exists(coords_path):
     positions_for_clustering[:, 2] /= 10
     labels = cluster_focus_peaks(positions_for_clustering)
 
-    coords = locate_specimens(wave_cube, positions, labels, distances)
+    coords, significance = locate_specimens(wave_cube, positions, labels,
+                                            distances)
 
     # Save outputs
-    np.savetxt(positions_path, positions)
-    np.savetxt(coords_path, coords)
+    coords_and_sig = np.column_stack([coords, significance])
+    np.savetxt(coords_path, coords_and_sig)

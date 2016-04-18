@@ -12,7 +12,7 @@ python_script = '/usr/lusers/bmmorris/git/shampoo/hyak/hyak_jobs.py'
 raw_hologram_paths = sorted(glob(os.path.join(data_dir, '*_holo.tif')))
 
 submit_template = open('submit_template.sh', 'r').read()
-walltime = '01:30:00'
+walltime = '01:00:00'
 email = 'bmmorris@uw.edu'
 
 # Divide holograms to assign 14 per node at a time
