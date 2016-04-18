@@ -22,7 +22,7 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.signal import tukey
 
-from skimage.restoration import unwrap_phase
+from skimage.restoration import unwrap_phase as skimage_unwrap_phase
 from skimage.io import imread
 from skimage.feature import blob_doh
 
@@ -670,6 +670,22 @@ class Hologram(object):
             return None
 
 
+def unwrap_phase(reconstructed_wave, seed=RANDOM_SEED):
+    """
+    2D phase unwrap a complex reconstructed wave.
+
+    Parameters
+    ----------
+    reconstructed_wave : `~numpy.ndarray`
+        Complex reconstructed wave
+    seed : float (optional)
+        Random seed, optional.
+    """
+    return skimage_unwrap_phase(2 * np.arctan(reconstructed_wave.imag /
+                                              reconstructed_wave.real),
+                                seed=seed)
+
+
 class ReconstructedWave(object):
     """
     Container for reconstructed waves and their intensity and phase
@@ -696,9 +712,7 @@ class ReconstructedWave(object):
         `~numpy.ndarray` of the reconstructed, unwrapped phase.
         """
         if self._phase_image is None:
-            self._phase_image = unwrap_phase(2 * np.arctan(np.imag(self.reconstructed_wave) /
-                                                           np.real(self.reconstructed_wave)),
-                                             seed=self.random_seed)
+            self._phase_image = unwrap_phase(self.reconstructed_wave)
 
         return self._phase_image
 

@@ -1,7 +1,7 @@
 from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
-from .reconstruction import ReconstructedWave
+from .reconstruction import ReconstructedWave, unwrap_phase
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -66,6 +66,12 @@ def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
     -------
     focus_index : int
         Index of the z-plane that is in focus
+    significance : float
+        Significance of a detection of a particle in the ROI cube, measured by
+        the significance of the negative peak in the derivative of the sum of
+        the unwrapped phase in the image plane, with respect to propagation
+        distance. For example, if ``significance < 3`` the detection of a
+        specimen may be legitimate.
     """
     if focus_on == 'amplitude':
         extremum = np.argmin
@@ -79,12 +85,36 @@ def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
     integral_abs_wave = np.sum(np.abs(roi_cube), axis=(1, 2))
     focus_index = extremum(integral_abs_wave)
 
+    # Do a similar integral on the unwrapped phase. The phase changes
+    # most rapidly on a source near focus, so the derivative wrt propagation
+    # distance of the phase integrated in space has a *minimum* near focus
+    integral_phase_wave = np.sum([unwrap_phase(roi_cube[i, ...])
+                                  for i in range(roi_cube.shape[0])],
+                                 axis=(1, 2))
+    d_int_phase = np.diff(integral_phase_wave)
+
+    # Measure significance of detected focus by taking the median normalized,
+    # standard deviation normalized derivative of phase with respect to
+    # propagation distance. This quantity becomes significantly negative for
+    # real specimens. For example, significance < -3 may yield real particles.
+    significance = np.min(d_int_phase / np.median(d_int_phase) /
+                          d_int_phase.std())
     if plot:
         plt.figure()
-        plt.plot(range(roi_cube.shape[0]), integral_abs_wave)
-        plt.axvline(focus_index, ls='--')
+        plt.plot(range(roi_cube.shape[0]),
+                 (integral_abs_wave - integral_abs_wave.mean())/integral_abs_wave.std(),
+                 label='intensity')
 
-    return focus_index
+        plt.plot(range(roi_cube.shape[0]-1),
+                 (d_int_phase - d_int_phase.mean())/d_int_phase.std(),
+                 label='d(phase)/d(prop dist)')
+
+        plt.xlabel('Propagation distance index')
+        plt.title('Significance: {0:.4f}'.format(significance))
+        plt.axvline(focus_index, ls='--')
+        plt.legend()
+    return focus_index, significance
+
 
 def _correct_limits(minimum, maximum, axis_range, edge):
     if minimum < axis_range:
@@ -112,10 +142,15 @@ def locate_specimens(wave_cube, positions, labels, distances, plots=False):
 
     Returns
     -------
-    specimen_coordinates : `numpy.ndarray`
+    specimen_coordinates : `~numpy.ndarray`
         (x, y, z) coordinates of each detected specimen
+    specimen_coordinates : `~numpy.ndarray`
+        Significance of each specimen detection. See docs of
+        `~shampoo.focus.find_focus_plane` for hints on how to interpret
+        the significance quantity.
     """
     specimen_coordinates = []
+    specimen_significance = []
     for l in set(labels):
         n_points = np.count_nonzero(labels == l)
         if l != -1 and n_points > 3:
@@ -142,11 +177,14 @@ def locate_specimens(wave_cube, positions, labels, distances, plots=False):
                                  ymin - y_range:ymax + y_range]
 
             # Using this cropped cube centered on the ROI, find the best focus
-            focus_ind = (find_focus_plane(roi_cube, plot=plots) +
-                         zmin - z_range)
+
+            focus_ind_minus_margin, significance = find_focus_plane(roi_cube,
+                                                                    plot=plots)
+            focus_ind = focus_ind_minus_margin + zmin - z_range
 
             specimen_coordinates.append([xmedian, ymedian,
                                          distances[focus_ind]])
+            specimen_significance.append(significance)
 
             if plots:
                 focused_wave = ReconstructedWave(wave_cube[focus_ind, ...])
@@ -158,5 +196,4 @@ def locate_specimens(wave_cube, positions, labels, distances, plots=False):
                         r*np.sin(thetas) + xmedian, lw=3, color='r')
                 plt.show()
 
-
-    return np.array(specimen_coordinates)
+    return np.array(specimen_coordinates), np.array(specimen_significance)
