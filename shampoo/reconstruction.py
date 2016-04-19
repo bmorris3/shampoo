@@ -674,12 +674,20 @@ def unwrap_phase(reconstructed_wave, seed=RANDOM_SEED):
     """
     2D phase unwrap a complex reconstructed wave.
 
+    Essentially a wrapper around the `~skimage.restoration.unwrap_phase`
+    function.
+
     Parameters
     ----------
     reconstructed_wave : `~numpy.ndarray`
         Complex reconstructed wave
     seed : float (optional)
         Random seed, optional.
+
+    Returns
+    -------
+    `~numpy.ndarray`
+        Unwrapped phase image
     """
     return skimage_unwrap_phase(2 * np.arctan(reconstructed_wave.imag /
                                               reconstructed_wave.real),
