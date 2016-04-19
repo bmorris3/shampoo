@@ -22,27 +22,23 @@ import numpy as np
 from scipy.ndimage import gaussian_filter
 from scipy.signal import tukey
 
-from skimage.restoration import unwrap_phase
+from skimage.restoration import unwrap_phase as skimage_unwrap_phase
 from skimage.io import imread
 from skimage.feature import blob_doh
 
 from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
-# Use the 'agg' backend if on Linux
-import matplotlib
 import matplotlib.pyplot as plt
-if 'linux' in sys.platform:
-    matplotlib.use('agg')
 
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
 # fails, import scipy's FFT module instead
 try:
-   from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
+    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
-__all__ = ['Hologram', 'ReconstructedWave']
+__all__ = ['Hologram', 'ReconstructedWave', 'unwrap_phase']
 RANDOM_SEED = 42
 TWO_TO_N = [2**i for i in range(13)]
 
@@ -331,13 +327,12 @@ class Hologram(object):
 
         inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
 
-        phase_image = np.arctan(np.imag(inverse_psi)/np.real(inverse_psi))
-        unwrapped_phase_image = unwrap_phase(2*phase_image,
-                                             seed=self.random_seed)/2/self.wavenumber
+        unwrapped_phase_image = unwrap_phase(inverse_psi)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
 
         high = np.percentile(unwrapped_phase_image, 99)
         low = np.percentile(unwrapped_phase_image, 1)
+
         smooth_phase_image[high < unwrapped_phase_image] = high
         smooth_phase_image[low > unwrapped_phase_image] = low
 
@@ -351,6 +346,7 @@ class Hologram(object):
         digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
+            print(smooth_phase_image)
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
             #ax[0].imshow(unwrapped_phase_image, origin='lower')
             ax[0].imshow(smooth_phase_image, origin='lower')
@@ -622,6 +618,81 @@ class Hologram(object):
 
         return wave_cube, positions
 
+    def detect_specimens(self, reconstructed_wave, propagation_distance,
+                         margin=100, kernel_radius=4.0, save_png_to_disk=None):
+        cropped_img = reconstructed_wave.phase[margin:-margin, margin:-margin]
+        best_convolved_phase = convolve_fft(cropped_img,
+                                            MexicanHat2DKernel(kernel_radius))
+
+        best_convolved_phase_copy = best_convolved_phase.copy(order='C')
+
+        # Find positive peaks
+        blob_doh_kwargs = dict(threshold=0.00007,
+                               min_sigma=2,
+                               max_sigma=10)
+        blobs = blob_doh(best_convolved_phase_copy, **blob_doh_kwargs)
+
+        # Find negative peaks
+        negative_phase = -best_convolved_phase_copy
+        negative_phase += (np.median(best_convolved_phase_copy) -
+                           np.median(negative_phase))
+        negative_blobs = blob_doh(negative_phase, **blob_doh_kwargs)
+
+        all_blobs = []
+        for blob in blobs:
+            if blob.size > 0:
+                all_blobs.append(blob)
+
+        for neg_blob in negative_blobs:
+            if neg_blob.size > 0:
+                all_blobs.append(neg_blob)
+
+        if len(all_blobs) > 0:
+            all_blobs = np.vstack(all_blobs)
+
+        # If save pngs:
+        if save_png_to_disk is not None:
+            path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                            propagation_distance)
+            save_scaled_image(reconstructed_wave.phase, path, margin, all_blobs)
+
+        # Blobs get returned in rows with [x, y, radius], so save each
+        # set of blobs with the propagation distance to record z
+
+        # correct blob positions for margin:
+        all_blobs = np.float64(all_blobs)
+        if len(all_blobs) > 0:
+            all_blobs[:, 0] += margin
+            all_blobs[:, 1] += margin
+            all_blobs[:, 2] = propagation_distance
+            return all_blobs
+        else:
+            return None
+
+
+def unwrap_phase(reconstructed_wave, seed=RANDOM_SEED):
+    """
+    2D phase unwrap a complex reconstructed wave.
+
+    Essentially a wrapper around the `~skimage.restoration.unwrap_phase`
+    function.
+
+    Parameters
+    ----------
+    reconstructed_wave : `~numpy.ndarray`
+        Complex reconstructed wave
+    seed : float (optional)
+        Random seed, optional.
+
+    Returns
+    -------
+    `~numpy.ndarray`
+        Unwrapped phase image
+    """
+    return skimage_unwrap_phase(2 * np.arctan(reconstructed_wave.imag /
+                                              reconstructed_wave.real),
+                                seed=seed)
+
 
 class ReconstructedWave(object):
     """
@@ -649,9 +720,7 @@ class ReconstructedWave(object):
         `~numpy.ndarray` of the reconstructed, unwrapped phase.
         """
         if self._phase_image is None:
-            self._phase_image = unwrap_phase(2 * np.arctan(np.imag(self.reconstructed_wave) /
-                                                           np.real(self.reconstructed_wave)),
-                                             seed=self.random_seed)
+            self._phase_image = unwrap_phase(self.reconstructed_wave)
 
         return self._phase_image
 
