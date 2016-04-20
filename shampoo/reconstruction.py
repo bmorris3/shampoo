@@ -548,7 +548,7 @@ class Hologram(object):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
             wave_cube[index, ...] = wave.reconstructed_wave
-
+            all_blobs = None
             if track_objects:
                 # Crop reconstructed image, convolve, peak-find
                 cropped_img = wave.phase[margin:-margin, margin:-margin]
@@ -582,15 +582,17 @@ class Hologram(object):
                     all_blobs = np.vstack(all_blobs)
 
                 # If save pngs:
-                if save_png_to_disk is not None:
-                    path = "{0}/{1:.4f}.png".format(save_png_to_disk,
-                                                    propagation_distances[index])
-                    save_scaled_image(wave.phase, path, margin, all_blobs)
 
                 # Blobs get returned in rows with [x, y, radius], so save each
                 # set of blobs with the propagation distance to record z
                 blob_collection.append((np.float64(all_blobs),
                                         propagation_distances[index]))
+
+            if save_png_to_disk is not None:
+                path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                                propagation_distances[index])
+                save_scaled_image(wave.phase, path, margin, all_blobs)
+
 
         # Make the Pool of workers
         pool = ThreadPool(threads)

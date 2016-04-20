@@ -39,7 +39,7 @@ def cluster_focus_peaks(xyz, eps=5, min_samples=3):
     return labels
 
 
-def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
+def find_focus_plane(roi_cube, median_cube, focus_on='phase', plot=False):
     """
     Find focus plane in a cube of reconstructed waves at different propagation
     distances.
@@ -83,35 +83,74 @@ def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
 
     # Following Equation 9, 10 of Dubois et al. 2006:
     integral_abs_wave = np.sum(np.abs(roi_cube), axis=(1, 2))
-    focus_index = extremum(integral_abs_wave)
-
+    integral_phase_wave = np.sum(np.arctan(roi_cube.imag / roi_cube.real), axis=(1, 2))
+    #focus_index = extremum(integral_abs_wave)
+    focus_min = np.argmin(integral_abs_wave)
+    focus_max = np.argmax(integral_abs_wave)
+    focus_index = focus_min #0.5*(focus_min + focus_max)
     # Do a similar integral on the unwrapped phase. The phase changes
     # most rapidly on a source near focus, so the derivative wrt propagation
     # distance of the phase integrated in space has a *minimum* near focus
-    integral_phase_wave = np.sum([unwrap_phase(roi_cube[i, ...])
-                                  for i in range(roi_cube.shape[0])],
-                                 axis=(1, 2))
-    d_int_phase = np.diff(integral_phase_wave)
+    # unwrapped_phase_cube = [unwrap_phase(roi_cube[i, ...])
+    #                         for i in range(roi_cube.shape[0])]
+    # integral_phase_wave = np.array([np.ptp(upc) for upc in unwrapped_phase_cube])
+    # intensity = np.abs(roi_cube)
+    #integral_phase_wave = np.sum(intensity - np.median(intensity, axis=0), axis=(1, 2))
+
+    from astropy.convolution import convolve_fft, Gaussian2DKernel
+
+    # conv = [convolve_fft(i, Gaussian2DKernel(4),
+    #                      complex_dtype=np.complex128).sum()
+    #         for i in intensity]
+    # integral_phase_wave = np.array(conv)
+    #plt.plot(conv)
+    # fig, ax = plt.subplots(1, len(conv))
+    # for i, c in enumerate(intensity):
+    #     ax[i].imshow(c)
+    #     ax[i].set_xticks([])
+    #     ax[i].set_yticks([])
+    #     if i == focus_index:
+    #         ax[i].set_title('X')
+    #plt.show()
+
+    #d_int_phase = np.diff(integral_phase_wave)
 
     # Measure significance of detected focus by taking the median normalized,
     # standard deviation normalized derivative of phase with respect to
     # propagation distance. This quantity becomes significantly negative for
     # real specimens. For example, significance < -3 may yield real particles.
-    significance = np.min(d_int_phase / np.median(d_int_phase) /
-                          d_int_phase.std())
+    significance = 0.1#np.min(d_int_phase / np.median(d_int_phase) /
+                       #   d_int_phase.std())
     if plot:
         plt.figure()
         plt.plot(range(roi_cube.shape[0]),
                  (integral_abs_wave - integral_abs_wave.mean())/integral_abs_wave.std(),
                  label='intensity')
 
-        plt.plot(range(roi_cube.shape[0]-1),
-                 (d_int_phase - d_int_phase.mean())/d_int_phase.std(),
-                 label='d(phase)/d(prop dist)')
+        # for mc in median_cube:
+        #     plt.plot(range(roi_cube.shape[0]),
+        #              (mc - mc.mean())/mc.std(),
+        #              label='intensity')
+
+        # plt.plot(range(roi_cube.shape[0]-1),
+        #          (d_int_phase - d_int_phase.mean())/d_int_phase.std(),
+        #          label='d(phase)/d(prop dist)')
+
+        # plt.plot(range(roi_cube.shape[0]-1),
+        #          (np.abs(d_int_phase) - d_int_phase.mean())/d_int_phase.std(),
+        #          label='|d(phase)/d(prop dist)|')
+
+        plt.plot(range(roi_cube.shape[0]),
+                 (integral_phase_wave - integral_phase_wave.mean()) /
+                 integral_phase_wave.std(),
+                 label='phase')
 
         plt.xlabel('Propagation distance index')
         plt.title('Significance: {0:.4f}'.format(significance))
-        plt.axvline(focus_index, ls='--')
+        plt.axvline(focus_index, ls='--', lw=2)
+        plt.axvline(focus_min, ls='--')
+        plt.axvline(focus_max, ls='--')
+
         plt.legend()
     return focus_index, significance
 
