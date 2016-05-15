@@ -8,7 +8,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 from scipy.ndimage import gaussian_filter
-from skimage.filters import threshold_otsu
+from skimage.filters import threshold_otsu, threshold_yen
 from skimage.measure import label, regionprops
 from sklearn.decomposition import PCA
 from mst_clustering import MSTClustering
@@ -20,7 +20,7 @@ try:
 except ImportError:
     from scipy.fftpack import fft2, ifft2
 
-__all__ = ["median_hologram", "locate_from_hologram"]
+__all__ = ["median_hologram", "locate_from_hologram", "cluster_positions"]
 
 
 def median_hologram(hologram_paths):
@@ -90,6 +90,13 @@ def locate_from_hologram(hologram_cube, median_holo, threads=8,
     positions = []
 
     def locate(i):
+        """
+        Median subtract each hologram, convolve with Mexican hat kernel,
+        then smooth the absolute value of the convolution, and use
+        Otsu's thresholding to segment the image into specimens.
+        Record the time, x and y centroids, and some intensity features
+        within each segment.
+        """
         median_sub_holo = hologram_cube[i, ...] - median_holo
         conv_holo = convolve_fft(median_sub_holo,
                                  MexicanHat2DKernel(convolution_kernel_radius),
@@ -97,7 +104,8 @@ def locate_from_hologram(hologram_cube, median_holo, threads=8,
         smooth_abs_conv = gaussian_filter(np.abs(conv_holo),
                                           gaussian_kernel_radius)
 
-        thresh = threshold_otsu(smooth_abs_conv)
+        thresh = threshold_otsu(smooth_abs_conv - np.median(smooth_abs_conv))
+        # thresh = threshold_yen(smooth_abs_conv - np.median(smooth_abs_conv))
 
         masked = np.ones_like(smooth_abs_conv)
         masked[smooth_abs_conv <= thresh] = 0
@@ -110,6 +118,7 @@ def locate_from_hologram(hologram_cube, median_holo, threads=8,
                    region.max_intensity, region.mean_intensity)
             positions.append(pos)
 
+    # Use multithreading to do the `locate` function on each hologram
     pool = ThreadPool(threads)
     pool.map(locate, range(n_times))
 
@@ -178,6 +187,7 @@ def cluster_positions(positions, plots=False, cutoff_scale_min=120,
     x_min_ind, y_min_ind = np.where(scores == scores.min())
     n_neighbors_min = n_neighbors[y_min_ind[0]]
     cuttoff_scale_min = cutoff_scales[x_min_ind[0]]
+    print(n_neighbors_min, cuttoff_scale_min)
 
     model = MSTClustering(cutoff_scale=cuttoff_scale_min, approximate=True,
                           n_neighbors=n_neighbors_min, min_cluster_size=4)
