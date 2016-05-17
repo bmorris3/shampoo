@@ -9,10 +9,11 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 import numpy as np
 import matplotlib.pyplot as plt
-# from numba import jit
+from numba import jit
 
 __all__ = ['lmsphere']
 
+@jit(nopython=True)
 def dcomplex(a, b=0):
     """
     Construct a complex number (or array) with the same call signature
@@ -31,7 +32,7 @@ def dcomplex(a, b=0):
     """
     return a + 1j*b
 
-
+@jit(nopython=True)
 def dcomplexarr(n, m=None):
     """
     Construct a complex array with the same call signature
@@ -50,10 +51,23 @@ def dcomplexarr(n, m=None):
     A complex array.
     """
     if m is None:
-        return np.zeros(n) + 1j*np.zeros(n)
-    return np.zeros((n, m)) + 1j*np.zeros((n, m))
+        return np.zeros(n, dtype=np.complex128)
+    return np.zeros((n, m), dtype=np.complex128)
 
+@jit(nopython=True)
+def meshgrid(xrange, yrange):
+    x = np.zeros((yrange.shape[0], xrange.shape[0]))
+    y = np.zeros((yrange.shape[0], xrange.shape[0]))
 
+    for i in range(x.shape[0]):
+        x[i, :] = xrange
+
+    for i in range(y.shape[1]):
+        y[:, i] = yrange
+
+    return x, y
+
+@jit(nopython=True)
 def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
              precision=None):
     """
@@ -77,7 +91,12 @@ def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
     """
     nx = float(dim[0])
     ny = float(dim[1])
-    x, y = np.meshgrid(np.arange(nx) - rp[0], np.arange(ny) - rp[1])
+    #x, y = np.meshgrid(np.arange(nx) - rp[0], np.arange(ny) - rp[1])
+
+    xrange = np.arange(nx) - rp[0]
+    yrange = np.arange(ny) - rp[1]
+    x, y = meshgrid(xrange, yrange)
+
     zp = float(rp[2])
 
     field = spherefield(x, y, zp, ap, n_sphere, nm, lambda_, mpp)
@@ -92,7 +111,7 @@ def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
 
     return a.reshape((int(nx), int(ny)))
 
-
+@jit(nopython=True)
 def spherefield(x, y, z, a, n_sphere, nm, lambda_, mpp):
     """
     x: [npts] array of pixel coordinates [pixels]
@@ -118,7 +137,7 @@ def spherefield(x, y, z, a, n_sphere, nm, lambda_, mpp):
 
     return field
 
-
+@jit(nopython=True)
 def sphericalfield(x_, y_, z_, ab, lambda_):
     """
     x : [npts] array of pixel coordinates [pixels]
@@ -162,8 +181,11 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
     # ... Riccati-Bessel radial functions, page 478
     sinkr = np.sin(kr)
     coskr = np.cos(kr)
-    xi_nm2 = dcomplex(coskr, sinkr) # \xi_{-1}(kr)
-    xi_nm1 = dcomplex(sinkr,-coskr) # \xi_0(kr)
+    # xi_nm2 = dcomplex(coskr, sinkr) # \xi_{-1}(kr)
+    # xi_nm1 = dcomplex(sinkr,-coskr) # \xi_0(kr)
+
+    xi_nm2 = coskr + 1j*sinkr # \xi_{-1}(kr)
+    xi_nm1 = sinkr - 1j*coskr # \xi_0(kr)
 
     # ... angular functions (4.47), page 95
     pi_nm1 = 0 + np.zeros(npts)                   # \pi_0(\cos\theta)
@@ -237,20 +259,15 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
 
     return Ec
 
-def shift(a, shift):
-    return np.roll(a, shift)
+# @jit(nopython=True)
+# def shift(a, shift):
+#     return np.concatenate([])
 
-# def shift(a, steps):
-#     b = np.zeros_like(a, dtype=np.complex128)
-#     len_a = a.shape[0]
-#     for i in range(len_a):
-#         if i >= steps:
-#             b[i] = a[i-steps]
-#         if i < steps:
-#             offset = b.shape[0] - steps
-#             b[i] = a[i + offset]
-#     return b
+# @jit(nopython=True)
+# def shift(a, shift):
+#     return np.roll(a, shift)
 
+@jit(nopython=True)
 def Nstop(x, m):
     """
     Number of terms to keep in the partial wave expansion
@@ -266,9 +283,22 @@ def Nstop(x, m):
 
     #;; Yang (2003) Eq. (30)
     #return int(np.floor(np.max([ns, abs(x*m), np.abs(shift(x, -1)*m)])) + 15)
-    return int(np.floor(np.max([ns, abs(x*m), np.abs(x*m)])) + 15)
+    a = np.array([ns, abs(x*m)])
+    return int(np.floor(np.max(a)) + 15)
 
+@jit(nopython=True)
+def shift(a, steps):
+    b = np.zeros_like(a, dtype=np.complex128)
+    len_a = a.shape[0]
+    for i in range(len_a):
+        if i >= steps:
+            b[i] = a[i-steps]
+        if i < steps:
+            offset = b.shape[0] - steps
+            b[i] = a[i + offset]
+    return b
 
+@jit(nopython=True)
 def sphere_coefficients(ap, n_sphere, nm, lambda_):
     """
     ap : [nlayers] radii of layered sphere [micrometers]
@@ -288,7 +318,8 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
 
     nlayers = 1 #np.size(ap)
 
-    x = 2 * np.pi * np.real(nm) * ap / lambda_ # size parameter [array]
+    #x = 2 * np.pi * np.real(nm) * ap / lambda_ # size parameter [array]
+    x = 2 * np.pi * nm.real * ap / lambda_ # size parameter [array]
     m = dcomplex(n_sphere/nm)                    # relative refractive index [array]
     nmax = Nstop(x, m)              # number of terms in partial-wave expansion
     ci = dcomplex(0, 1)             # imaginary unit
@@ -318,7 +349,7 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
     #z1 = x[0] * m[0]
     z1 = x * m
     for n in range(1, nmax+1)[::-1]:
-        D1_a[0, n-1] = n/z1 - 1/(D1_a[0, n] + n/z1)
+       D1_a[0, n-1] = n/z1 - 1/(D1_a[0, n] + n/z1)
     # nrange = np.arange(1, nmax+1)[::-1] #[::-1]
     # D1_a[0, nrange-1] = nrange/z1 - 1/(D1_a[0, nrange] + nrange/z1)
 
@@ -326,12 +357,9 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
 
     D3_a[0, 0] = ci                                     # Eq. (18a)
     # for n in range(1, nmax):      #upward recurrence Eq. (18b)
-    #     print(PsiZeta_a[n:n+1, 0].shape, (PsiZeta_a[0, n-1] *
-    #                        (n/z1 - D1_a[0, n-1]) * (n/z1 - D3_a[0, n-1])).shape)
-    #     print(PsiZeta_a[n:n+1, 0])
-        # PsiZeta_a[n:n+1, 0] = (PsiZeta_a[0, n-1] *
-        #                    (n/z1 - D1_a[0, n-1]) * (n/z1 - D3_a[0, n-1]))
-        # D3_a[n:n+1, 0] = D1_a[0, n] + ci/PsiZeta_a[0, n]
+    #     PsiZeta_a[n, 0] = (PsiZeta_a[0, n-1] *
+    #                        (n/z1 - D1_a[0, n-1]) * (n/z1 - D3_a[0, n-1]))
+    #     D3_a[n, 0] = D1_a[0, n] + ci/PsiZeta_a[0, n]
     # Ha and Hb in the core
     Ha[0, :] = D1_a[0, :-1]     # Eq. (7a)
     Hb[0, :] = D1_a[0, :-1]     # Eq. (8a)
@@ -410,36 +438,36 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
     # ab[0, :] /= (Ha[-1, :]/m[-1] + n/x[-1]) * Zeta - shift(Zeta, 1)
     # ab[1, :]  = (Hb[-1, :]*m[-1] + n/x[-1]) * Psi  - shift(Psi,  1) # Eq. (6)
     # ab[1, :] /= (Hb[-1, :]*m[-1] + n/x[-1]) * Zeta - shift(Zeta, 1)
-    print(ab[0, :].shape, np.shape((Ha[-1, :]/m + n/x) * Psi  - shift(Psi,  1)), np.shape((Ha[-1, :]/m + n/x) * Zeta - shift(Zeta, 1)))
-
     ab[0, :]  = (Ha[-1, :]/m + n/x) * Psi  - shift(Psi,  1) # Eq. (5)
     ab[0, :] /= (Ha[-1, :]/m + n/x) * Zeta - shift(Zeta, 1)
     ab[1, :]  = (Hb[-1, :]*m + n/x) * Psi  - shift(Psi,  1) # Eq. (6)
     ab[1, :] /= (Hb[-1, :]*m + n/x) * Zeta - shift(Zeta, 1)
-
-    print(ab[:,0], np.shape(dcomplex(0)))
     ab[:, 0]  = dcomplex(0)
 
     return ab
 
-holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
+# holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
 
-import time
-times = []
-for i in range(5):
-    start = time.time()
-    holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
-    end = time.time()
-    times.append(end - start)
-print('mean time: {0}'.format(np.median(times)))
+ab = sphere_coefficients(ap=1, n_sphere=1.34+0*1j, nm=1.33+0*1j, lambda_=0.405)
+
+# import time
+# times = []
+# for i in range(5):
+#     start = time.time()
+#     holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
+#     end = time.time()
+#     times.append(end - start)
+# print('mean time: {0}'.format(np.median(times)))
 # plt.imshow(holo)
 # plt.show()
 
-from astropy.io import fits
-example_holo = fits.getdata('../../data/idl_example_hologram.fits')
+# holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
 
-fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-ax[0].imshow(holo, cmap=plt.cm.viridis)
-ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
-ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
-plt.show()
+# from astropy.io import fits
+# example_holo = fits.getdata('../../data/idl_example_hologram.fits')
+#
+# fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+# ax[0].imshow(holo, cmap=plt.cm.viridis)
+# ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
+# ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
+# plt.show()
