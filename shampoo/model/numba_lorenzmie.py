@@ -33,7 +33,7 @@ def dcomplex(a, b=0):
     return a + 1j*b
 
 @jit(nopython=True)
-def dcomplexarr(n, m=None):
+def dcomplexarr(n):
     """
     Construct a complex array with the same call signature
     as the IDL ``dcomplexarr`` constructor.
@@ -50,8 +50,10 @@ def dcomplexarr(n, m=None):
     -------
     A complex array.
     """
-    if m is None:
-        return np.zeros(n, dtype=np.complex128)
+    return np.zeros(n, dtype=np.complex128)
+
+@jit(nopython=True)
+def dcomplexarr2d(n, m):
     return np.zeros((n, m), dtype=np.complex128)
 
 @jit(nopython=True)
@@ -67,7 +69,7 @@ def meshgrid(xrange, yrange):
 
     return x, y
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
              precision=None):
     """
@@ -111,7 +113,7 @@ def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
 
     return a.reshape((int(nx), int(ny)))
 
-@jit(nopython=True)
+#@jit(nopython=True)
 def spherefield(x, y, z, a, n_sphere, nm, lambda_, mpp):
     """
     x: [npts] array of pixel coordinates [pixels]
@@ -192,11 +194,11 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
     pi_n   = 1 + np.zeros(npts)                    # \pi_1(\cos\theta)
 
     # storage for vector spherical harmonics: [r,theta,phi]
-    Mo1n = dcomplexarr(3, npts)
-    Ne1n = dcomplexarr(3, npts)
+    Mo1n = dcomplexarr2d(3, npts)
+    Ne1n = dcomplexarr2d(3, npts)
 
     # storage for scattered field
-    Es = dcomplexarr(3, npts)
+    Es = dcomplexarr2d(3, npts)
 
     # Compute field by summing multipole contributions
     for n in range(1, nc):
@@ -318,107 +320,45 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
 
     nlayers = 1 #np.size(ap)
 
-    #x = 2 * np.pi * np.real(nm) * ap / lambda_ # size parameter [array]
     x = 2 * np.pi * nm.real * ap / lambda_ # size parameter [array]
     m = dcomplex(n_sphere/nm)                    # relative refractive index [array]
     nmax = Nstop(x, m)              # number of terms in partial-wave expansion
     ci = dcomplex(0, 1)             # imaginary unit
 
     # arrays for storing results
-    ab = dcomplexarr(2, nmax+1)
+    ab = dcomplexarr2d(2, nmax+1)
 
     D1     = dcomplexarr(nmax+2)
-    D1_a   = dcomplexarr(nlayers, nmax+2)
-    # D1_am1 = dcomplexarr(nlayers, nmax+2)
+    D1_a   = dcomplexarr2d(nlayers, nmax+2)
 
     D3     = dcomplexarr(nmax+1)
-    D3_a   = dcomplexarr(nlayers, nmax+1)
-    # D3_am1 = dcomplexarr(nlayers, nmax+1)
+    D3_a   = dcomplexarr2d(nlayers, nmax+1)
 
     Psi         = dcomplexarr(nmax+1)
     Zeta        = dcomplexarr(nmax+1)
     PsiZeta     = dcomplexarr(nmax+1)
-    PsiZeta_a   = dcomplexarr(nlayers, nmax+1)
-    # PsiZeta_am1 = dcomplexarr(nlayers, nmax+1)
+    PsiZeta_a   = dcomplexarr2d(nlayers, nmax+1)
 
     # Q  = dcomplexarr(nlayers, nmax+1)
-    Ha = dcomplexarr(nlayers, nmax+1)
-    Hb = dcomplexarr(nlayers, nmax+1)
+    Ha = dcomplexarr2d(nlayers, nmax+1)
+    Hb = dcomplexarr2d(nlayers, nmax+1)
 
     # Calculate D1, D3 and PsiZeta for Z1 in the first layer
-    #z1 = x[0] * m[0]
     z1 = x * m
-    for n in range(1, nmax+1)[::-1]:
+    for n in list(range(1, nmax+1))[::-1]:
        D1_a[0, n-1] = n/z1 - 1/(D1_a[0, n] + n/z1)
-    # nrange = np.arange(1, nmax+1)[::-1] #[::-1]
-    # D1_a[0, nrange-1] = nrange/z1 - 1/(D1_a[0, nrange] + nrange/z1)
 
     PsiZeta_a[0, 0] = 0.5 * (1 - np.exp(2 * ci * z1)) # Eq. (18a)
 
     D3_a[0, 0] = ci                                     # Eq. (18a)
-    # for n in range(1, nmax):      #upward recurrence Eq. (18b)
-    #     PsiZeta_a[n, 0] = (PsiZeta_a[0, n-1] *
-    #                        (n/z1 - D1_a[0, n-1]) * (n/z1 - D3_a[0, n-1]))
-    #     D3_a[n, 0] = D1_a[0, n] + ci/PsiZeta_a[0, n]
+
     # Ha and Hb in the core
     Ha[0, :] = D1_a[0, :-1]     # Eq. (7a)
     Hb[0, :] = D1_a[0, :-1]     # Eq. (8a)
 
-    # # Iterate from layer 2 to layer L
-    # for ii in range(1, nlayers - 1):
-    #     z1 = x[ii] * m[ii]
-    #     z2 = x[ii-1] * m[ii]
-    #     # Downward recurrence for D1, Eqs. (16a) and (16b)
-    #     for n in range(1, nmax + 1)[::-1]: # Eq. (16 b)
-    #         D1_a[n-1,ii]   = n/z1 - 1/(D1_a[ii, n]   + n/z1)
-    #         D1_am1[n-1,ii] = n/z2 - 1/(D1_am1[ii, n] + n/z2)
-    #
-    #
-    #     # Upward recurrence for PsiZeta and D3, Eqs. (18a) and (18b)
-    #     PsiZeta_a[0, ii]   = 0.5 * (1 - np.exp(2 * ci * z1)) # Eq. (18a)
-    #     PsiZeta_am1[0, ii] = 0.5 * (1 - np.exp(2 * ci * z2))
-    #     D3_a[0, ii]   = ci
-    #     D3_am1[0, ii] = ci
-    #
-    #     for n in range(1, nmax):   # Eq. (18b)
-    #         PsiZeta_a[n, ii]   = (PsiZeta_a[n-1, ii] *
-    #                               (n/z1 -  D1_a[n-1, ii]) *
-    #                               (n/z1 -  D3_a[n-1, ii]))
-    #         PsiZeta_am1[n, ii] = (PsiZeta_am1[n-1, ii] *
-    #                               (n/z2 - D1_am1[n-1, ii]) *
-    #                               (n/z2 - D3_am1[n-1, ii]))
-    #         D3_a[n, ii]   = D1_a[n, ii]   + ci/PsiZeta_a[n, ii]
-    #         D3_am1[n, ii] = D1_am1[n, ii] + ci/PsiZeta_am1[n, ii]
-    #
-    #
-    #     # Upward recurrence for Q
-    #     Q[ii, 0] = (np.exp(-2 * ci * z2) - 1) / (np.exp(-2 * ci * z1) - 1)
-    #     for n in range(1, nmax):
-    #         Num = (z1 * D1_a[n,ii]   + n) * (n - z1 * D3_a[n-1, ii])
-    #         Den = (z2 * D1_am1[n,ii] + n) * (n - z2 * D3_am1[n-1, ii])
-    #         Q[n,ii] = (x[ii-1]/x[ii])**2 * Q[n-1, ii] * Num/Den
-    #
-    #
-    #     # Upward recurrence for Ha and Hb, Eqs. (7b), (8b) and (12) - (15)
-    #     for n in range(1, nmax):
-    #         G1 = m[ii] * Ha[n, ii-1] - m[ii-1] * D1_am1[n, ii]
-    #         G2 = m[ii] * Ha[n, ii-1] - m[ii-1] * D3_am1[n, ii]
-    #         Temp = Q[n, ii] * G1
-    #         Num = G2 * D1_a[n, ii] - Temp * D3_a[n, ii]
-    #         Den = G2 - Temp
-    #         Ha[n, ii] = Num/Den
-    #
-    #         G1 = m[ii-1] * Hb[n, ii-1] - m[ii] * D1_am1[n, ii]
-    #         G2 = m[ii-1] * Hb[n, ii-1] - m[ii] * D3_am1[n, ii]
-    #         Temp = Q[n, ii] * G1
-    #         Num = G2 * D1_a[n, ii] - Temp * D3_a[n, ii]
-    #         Den = G2 - Temp
-    #         Hb[n, ii] = Num/Den
-
-    # z1 = dcomplex(x[-1])
     z1 = dcomplex(x)
     # Downward recurrence for D1, Eqs. (16a) and (16b)
-    for n in range(1, nmax)[::-1]: # Eq. (16b)
+    for n in list(range(1, nmax))[::-1]: # Eq. (16b)
         D1[n-1] = n/z1 - (1/(D1[n] + n/z1))
 
     # Upward recurrence for Psi, Zeta, PsiZeta and D3, Eqs. (18a) and (18b)
@@ -432,32 +372,50 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
         PsiZeta[n] = PsiZeta[n-1] * (n/z1 -D1[n-1]) * (n/z1 - D3[n-1])
         D3[n] = D1[n] + ci/PsiZeta[n]
 
-    # Scattering coefficients, Eqs. (5) and (6)
-    n = np.arange(nmax + 1)
-    # ab[0, :]  = (Ha[-1, :]/m[-1] + n/x[-1]) * Psi  - shift(Psi,  1) # Eq. (5)
-    # ab[0, :] /= (Ha[-1, :]/m[-1] + n/x[-1]) * Zeta - shift(Zeta, 1)
-    # ab[1, :]  = (Hb[-1, :]*m[-1] + n/x[-1]) * Psi  - shift(Psi,  1) # Eq. (6)
-    # ab[1, :] /= (Hb[-1, :]*m[-1] + n/x[-1]) * Zeta - shift(Zeta, 1)
-    ab[0, :]  = (Ha[-1, :]/m + n/x) * Psi  - shift(Psi,  1) # Eq. (5)
-    ab[0, :] /= (Ha[-1, :]/m + n/x) * Zeta - shift(Zeta, 1)
-    ab[1, :]  = (Hb[-1, :]*m + n/x) * Psi  - shift(Psi,  1) # Eq. (6)
-    ab[1, :] /= (Hb[-1, :]*m + n/x) * Zeta - shift(Zeta, 1)
+    shift_Psi = shift(Psi,  1)
+    shift_Zeta = shift(Zeta, 1)
+    n2 = np.arange(nmax + 1)
+
+
+    for n in np.arange(nmax+1):
+        ab[0, n] = (((Ha[0, n]/m + n2[n]/x) * Psi[n]  - shift_Psi[n]) /
+                    ((Ha[0, n]/m + n2[n]/x) * Zeta[n] - shift_Zeta[n])) # Eq. (5)
+        ab[1, n] = (((Hb[0, n]*m + n2[n]/x) * Psi[n]  - shift_Psi[n]) /
+                    ((Hb[0, n]*m + n2[n]/x) * Zeta[n] - shift_Zeta[n])) # Eq. (6)
+
     ab[:, 0]  = dcomplex(0)
 
     return ab
 
 # holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
+    # rp  : [x,y,z] 3 dimensional position of sphere relative to lower-left corner of image.
+    # ap  : radius of sphere [micrometers]
+    # n_sphere  : (complex) refractive index of sphere
+    # nm  : (complex) refractive index of medium
+    # lambda: vacuum wavenp.sizegth of light [micrometers]
+    # mpp: micrometers per pixel
+    # dim : [nx,ny] dimensions of image [pixels]
 
-ab = sphere_coefficients(ap=1, n_sphere=1.34+0*1j, nm=1.33+0*1j, lambda_=0.405)
+#ab = sphere_coefficients(0.75, 1.5, 1.33, 0.532)
 
-# import time
-# times = []
-# for i in range(5):
-#     start = time.time()
-#     holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
-#     end = time.time()
-#     times.append(end - start)
-# print('mean time: {0}'.format(np.median(times)))
+    # ap : [nlayers] radii of layered sphere [micrometers]
+    #     NOTE: ap and np are reordered automatically so that
+    #     ap is in ascending order.
+    #
+    # n_sphere : [nlayers] (complex) refractive indexes of sphere's layers
+    #
+    # nm : (complex) refractive index of medium
+    #
+    # lambda_ : wavelength of light [micrometers]
+
+import time
+times = []
+for i in range(5):
+    start = time.time()
+    holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
+    end = time.time()
+    times.append(end - start)
+print('mean time: {0}'.format(np.median(times)))
 # plt.imshow(holo)
 # plt.show()
 
