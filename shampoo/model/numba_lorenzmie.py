@@ -69,8 +69,8 @@ def meshgrid(xrange, yrange):
 
     return x, y
 
-#@jit(nopython=True)
-def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
+@jit(nopython=True)
+def lmsphere_inner(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
              precision=None):
     """
     rp  : [x,y,z] 3 dimensional position of sphere relative to lower-left corner of image.
@@ -109,11 +109,26 @@ def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
 
     field *= alpha * np.exp(-k * (zp + delta) * 1j) ## scattered field
     field[0, :] += 1.                                   ## incident field
-    a = np.sum(np.real(field * np.conj(field)), 0)        ## intensity
+    return field * np.conj(field)
 
+
+
+    # field_times_conj_field = field * np.conj(field)
+    # a = np.sum(field_times_conj_field, 0)        ## intensity
+    #
+    # return a.reshape((int(nx), int(ny)))
+
+def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
+             precision=None):
+    field = lmsphere_inner(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
+                           precision=None)
+    a = np.sum(field.real, 0)
+    nx = float(dim[0])
+    ny = float(dim[1])
     return a.reshape((int(nx), int(ny)))
 
-#@jit(nopython=True)
+
+@jit(nopython=True)
 def spherefield(x, y, z, a, n_sphere, nm, lambda_, mpp):
     """
     x: [npts] array of pixel coordinates [pixels]
@@ -156,9 +171,8 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
 
     lambda : wavelenth of light in medium [pixels]
     """
-    npts = np.size(x_)
-    # nc = np.size(ab[0,:])-1      # number of terms required for convergence
-    nc = np.size(ab[0,:])-1      # number of terms required for convergence
+    npts = x_.shape[0] * x_.shape[1]
+    nc = ab[0,:].shape[0] -1      # number of terms required for convergence
 
     k = 2 * np.pi / lambda_         # wavenumber in medium [pixel**-1]
 
@@ -260,14 +274,6 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
     Ec[2, :] =  Es[0, :] * costheta - Es[1, :] * sintheta
 
     return Ec
-
-# @jit(nopython=True)
-# def shift(a, shift):
-#     return np.concatenate([])
-
-# @jit(nopython=True)
-# def shift(a, shift):
-#     return np.roll(a, shift)
 
 @jit(nopython=True)
 def Nstop(x, m):
@@ -387,27 +393,6 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
 
     return ab
 
-# holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
-    # rp  : [x,y,z] 3 dimensional position of sphere relative to lower-left corner of image.
-    # ap  : radius of sphere [micrometers]
-    # n_sphere  : (complex) refractive index of sphere
-    # nm  : (complex) refractive index of medium
-    # lambda: vacuum wavenp.sizegth of light [micrometers]
-    # mpp: micrometers per pixel
-    # dim : [nx,ny] dimensions of image [pixels]
-
-#ab = sphere_coefficients(0.75, 1.5, 1.33, 0.532)
-
-    # ap : [nlayers] radii of layered sphere [micrometers]
-    #     NOTE: ap and np are reordered automatically so that
-    #     ap is in ascending order.
-    #
-    # n_sphere : [nlayers] (complex) refractive indexes of sphere's layers
-    #
-    # nm : (complex) refractive index of medium
-    #
-    # lambda_ : wavelength of light [micrometers]
-
 import time
 times = []
 for i in range(5):
@@ -421,11 +406,11 @@ print('mean time: {0}'.format(np.median(times)))
 
 # holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
 
-# from astropy.io import fits
-# example_holo = fits.getdata('../../data/idl_example_hologram.fits')
-#
-# fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-# ax[0].imshow(holo, cmap=plt.cm.viridis)
-# ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
-# ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
-# plt.show()
+from astropy.io import fits
+example_holo = fits.getdata('../../data/idl_example_hologram.fits')
+
+fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+ax[0].imshow(holo, cmap=plt.cm.viridis)
+ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
+ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
+plt.show()
