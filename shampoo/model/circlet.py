@@ -14,6 +14,7 @@ import numpy as np
 
 __all__ = ['CircletTransform']
 
+
 class CircletTransform(object):
     """
     Circlet transform as defined by Chauris et al. 2011 [1]_
@@ -110,6 +111,7 @@ class CircletTransform(object):
         _ = self.F_k
         circlet_coefficients = np.zeros((len(radii), self.fft_image.shape[0],
                                          self.fft_image.shape[1]))
+        
         def job(i):
             circlet_coefficients[i, ...] = self.coefficients(radii[i])
 
