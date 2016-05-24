@@ -83,34 +83,48 @@ def find_focus_plane(roi_cube, focus_on='amplitude', plot=False):
 
     # Following Equation 9, 10 of Dubois et al. 2006:
     integral_abs_wave = np.sum(np.abs(roi_cube), axis=(1, 2))
-    focus_index = extremum(integral_abs_wave)
 
     # Do a similar integral on the unwrapped phase. The phase changes
     # most rapidly on a source near focus, so the derivative wrt propagation
     # distance of the phase integrated in space has a *minimum* near focus
-    integral_phase_wave = np.sum([unwrap_phase(roi_cube[i, ...])
-                                  for i in range(roi_cube.shape[0])],
-                                 axis=(1, 2))
-    d_int_phase = np.diff(integral_phase_wave)
+    # integral_phase_wave = np.sum([unwrap_phase(roi_cube[i, ...])
+    #                               for i in range(roi_cube.shape[0])],
+    #                              axis=(1, 2))
+    # d_int_phase = np.diff(integral_phase_wave)
+
+    tamura = np.sqrt(np.std(np.abs(roi_cube), axis=(1, 2))/
+                     np.mean(np.abs(roi_cube), axis=(1, 2)))
+
+    phase_cube = np.arctan(roi_cube.imag / roi_cube.real)
+    std = np.std(phase_cube, axis=(1, 2))
+    focus_index = np.argmax(std)
 
     # Measure significance of detected focus by taking the median normalized,
     # standard deviation normalized derivative of phase with respect to
     # propagation distance. This quantity becomes significantly negative for
     # real specimens. For example, significance < -3 may yield real particles.
-    significance = np.min(d_int_phase / np.median(d_int_phase) /
-                          d_int_phase.std())
+    significance = np.min(std / np.median(std) /
+                          std.std())
     if plot:
         plt.figure()
         plt.plot(range(roi_cube.shape[0]),
                  (integral_abs_wave - integral_abs_wave.mean())/integral_abs_wave.std(),
                  label='intensity')
 
-        plt.plot(range(roi_cube.shape[0]-1),
-                 (d_int_phase - d_int_phase.mean())/d_int_phase.std(),
-                 label='d(phase)/d(prop dist)')
+        # plt.plot(range(roi_cube.shape[0]-1),
+        #          (d_int_phase - d_int_phase.mean())/d_int_phase.std(),
+        #          label='d(phase)/d(prop dist)')
+
+        plt.plot(range(roi_cube.shape[0]),
+                 (tamura - tamura.mean())/tamura.std(),
+                 label='tamura')
+
+        plt.plot(range(roi_cube.shape[0]),
+                 (std - std.mean())/std.std(),
+                 label='std')
 
         plt.xlabel('Propagation distance index')
-        plt.title('Significance: {0:.4f}'.format(significance))
+        # plt.title('Significance: {0:.4f}'.format(significance))
         plt.axvline(focus_index, ls='--')
         plt.legend()
     return focus_index, significance
@@ -151,6 +165,7 @@ def locate_specimens(wave_cube, positions, labels, distances, plots=False):
     """
     specimen_coordinates = []
     specimen_significance = []
+
     for l in set(labels):
         n_points = np.count_nonzero(labels == l)
         if l != -1 and n_points > 3:

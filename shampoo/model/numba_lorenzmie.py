@@ -127,6 +127,32 @@ def lmsphere(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
     ny = float(dim[1])
     return a.reshape((int(nx), int(ny)))
 
+@jit(nopython=True)
+def gaussian_kernel(x, y, sigma):
+    return np.exp(-(x**2 + y**2)/2/sigma**2)
+
+@jit(nopython=True)
+def suppress_hologram(rp, holo, kernel_radius):
+    x0 = rp[0]
+    y0 = rp[1]
+    suppressed = holo.copy() - np.median(holo)
+    x, y = meshgrid(np.arange(suppressed.shape[0]) - x0,
+                    np.arange(suppressed.shape[1]) - y0)
+    #gauss = gaussian_kernel(x, y, kernel_radius)
+    #suppressed *= gauss
+    r = np.sqrt(x**2 + y**2)
+    suppressed *= np.exp(-r/20) + 0.05
+    return suppressed
+
+def lmsphere_suppressed(rp, ap, n_sphere, nm, lambda_, mpp, dim, kernel_radius=15):
+    field = lmsphere_inner(rp, ap, n_sphere, nm, lambda_, mpp, dim, alpha=1, delta=0,
+                           precision=None)
+    a = np.sum(field.real, 0)
+    nx = float(dim[0])
+    ny = float(dim[1])
+    holo = a.reshape((int(nx), int(ny)))
+    suppressed_hologram = suppress_hologram(rp, holo, kernel_radius)
+    return suppressed_hologram
 
 @jit(nopython=True)
 def spherefield(x, y, z, a, n_sphere, nm, lambda_, mpp):
@@ -242,10 +268,6 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
 
         Es += (En * ci * ab[0,n]) * Ne1n - (En * ab[1,n]) * Mo1n
 
-        # for ii in range(Es.shape[0]):
-        #     for m in range(Es.shape[1]):
-        #         Es[ii, m] += (En * ci * ab[0,n]) * Ne1n[ii, m] - (En * ab[1,n]) * Mo1n[ii, m]
-
         # upward recurrences ...
         # ... angular functions (4.47)
         # Method described by Wiscombe (1980)
@@ -268,12 +290,12 @@ def sphericalfield(x_, y_, z_, ab, lambda_):
     # is linearly polarized along x
 
     # In python version, do cartesian always
-    Ec = Es.copy()
-    Ec[0, :] =  Es[0, :] * sintheta * cosphi + Es[1, :] * costheta * cosphi - Es[2, :] * sinphi
-    Ec[1, :] =  Es[0, :] * sintheta * sinphi + Es[1, :] * costheta * sinphi + Es[2, :] * cosphi
-    Ec[2, :] =  Es[0, :] * costheta - Es[1, :] * sintheta
+    #Ec = Es.copy()
+    Es[0, :] =  Es[0, :] * sintheta * cosphi + Es[1, :] * costheta * cosphi - Es[2, :] * sinphi
+    Es[1, :] =  Es[0, :] * sintheta * sinphi + Es[1, :] * costheta * sinphi + Es[2, :] * cosphi
+    Es[2, :] =  Es[0, :] * costheta - Es[1, :] * sintheta
 
-    return Ec
+    return Es
 
 @jit(nopython=True)
 def Nstop(x, m):
@@ -382,35 +404,33 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
     shift_Zeta = shift(Zeta, 1)
     n2 = np.arange(nmax + 1)
 
-
-    for n in np.arange(nmax+1):
-        ab[0, n] = (((Ha[0, n]/m + n2[n]/x) * Psi[n]  - shift_Psi[n]) /
-                    ((Ha[0, n]/m + n2[n]/x) * Zeta[n] - shift_Zeta[n])) # Eq. (5)
-        ab[1, n] = (((Hb[0, n]*m + n2[n]/x) * Psi[n]  - shift_Psi[n]) /
-                    ((Hb[0, n]*m + n2[n]/x) * Zeta[n] - shift_Zeta[n])) # Eq. (6)
+    ab[0, :] = (((Ha[0, :]/m + n2/x) * Psi  - shift_Psi) /
+                ((Ha[0, :]/m + n2/x) * Zeta - shift_Zeta)) # Eq. (5)
+    ab[1, :] = (((Hb[0, :]*m + n2/x) * Psi  - shift_Psi) /
+                ((Hb[0, :]*m + n2/x) * Zeta - shift_Zeta)) # Eq. (6)
 
     ab[:, 0]  = dcomplex(0)
 
     return ab
 
-import time
-times = []
-for i in range(5):
-    start = time.time()
-    holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
-    end = time.time()
-    times.append(end - start)
-print('mean time: {0}'.format(np.median(times)))
-# plt.imshow(holo)
+# import time
+# times = []
+# for i in range(5):
+#     start = time.time()
+#     holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [501, 501])
+#     end = time.time()
+#     times.append(end - start)
+# print('mean time: {0}'.format(np.median(times)))
+# plt.imshow(holo, cmap=plt.cm.viridis)
 # plt.show()
 
 # holo = lmsphere([0, 0, 200], 0.75, 1.5, 1.33, 0.532, 0.135, [201, 201])
 
-from astropy.io import fits
-example_holo = fits.getdata('../../data/idl_example_hologram.fits')
-
-fig, ax = plt.subplots(1, 2, figsize=(10, 5))
-ax[0].imshow(holo, cmap=plt.cm.viridis)
-ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
-ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
-plt.show()
+# from astropy.io import fits
+# example_holo = fits.getdata('../../data/idl_example_hologram.fits')
+#
+# fig, ax = plt.subplots(1, 2, figsize=(10, 5))
+# ax[0].imshow(holo, cmap=plt.cm.viridis)
+# ax[1].hist(np.abs(example_holo - holo).ravel()*1e6, 100, log=True)
+# ax[1].set(xlabel='Difference from IDL standard [ppm]', ylabel='Frequency')
+# plt.show()
