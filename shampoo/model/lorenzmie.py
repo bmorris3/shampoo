@@ -199,7 +199,7 @@ def gaussian_kernel(x, y, sigma):
 
 
 @jit(nopython=True)
-def suppress_hologram(rp, holo, kernel_radius):
+def suppress_hologram(rp, holo, exp_amp):
     """
     Suppress the hologram intensity with distance from the particle centroid.
 
@@ -224,13 +224,13 @@ def suppress_hologram(rp, holo, kernel_radius):
     # gauss = gaussian_kernel(x, y, kernel_radius)
     # suppressed *= gauss
     r = np.sqrt(x ** 2 + y ** 2)
-    suppressed *= np.exp(-r / 20) + 0.05
+    suppressed *= exp_amp*(np.exp(-r / 20) + 0.05)
     return suppressed
 
 
 def lorenz_mie_field_cartesian_suppressed(rp, ap, n_sphere, nm, lambda_, mpp,
                                           dim, alpha=1, delta=0,
-                                          kernel_radius=15):
+                                          exp_amp=1):
     """
     Calculate the field produced by Lorenz-Mie scattering from a sphere,
     suppressed with distance from the centroid.
@@ -262,8 +262,9 @@ def lorenz_mie_field_cartesian_suppressed(rp, ap, n_sphere, nm, lambda_, mpp,
     """
     holo = lorenz_mie_field_cartesian(rp, ap, n_sphere, nm, lambda_, mpp, dim,
                                       alpha=alpha, delta=delta)
-    suppressed_hologram = suppress_hologram(rp, holo, kernel_radius)
-    return suppressed_hologram
+    normalized_hologram = (holo - np.median(holo))/np.std(holo)
+    suppressed_hologram = suppress_hologram(rp, normalized_hologram, exp_amp)
+    return (suppressed_hologram - np.median(suppressed_hologram))/np.std(suppressed_hologram)
 
 
 @jit(nopython=True)
@@ -523,3 +524,29 @@ def sphere_coefficients(ap, n_sphere, nm, lambda_):
     ab[:, 0] = dcomplex(0)
 
     return ab
+
+@jit(nopython=True)
+def cartesian_to_radial_bin(hologram, centroid, radii=None):
+
+    x, y = meshgrid(np.arange(hologram.shape[0]),
+                    np.arange(hologram.shape[1]))
+
+    if radii is None:
+        radii = np.arange(2, hologram.shape[0]//2, 1)
+
+    binned_radii = np.zeros(len(radii) - 1)
+    binned_mean = np.zeros(len(radii) - 1)
+    binned_error = np.zeros(len(radii) - 1)
+
+    for i in range(1, len(radii)):
+        r_lower = radii[i-1]
+        r_upper = radii[i]
+        r2 = (x - centroid[0])**2 + (y - centroid[1])**2
+        condition = (r2 > r_lower**2) & (r2 < r_upper**2)
+
+        binned_radii[i-1] = 0.5 * (r_lower + r_upper)
+        binned_mean[i-1] = np.nanmean(hologram[condition])
+        binned_error[i-1] = (np.nanstd(hologram[condition]) /
+                             np.sqrt(np.count_nonzero(condition)))
+
+    return binned_radii, binned_mean, binned_error
