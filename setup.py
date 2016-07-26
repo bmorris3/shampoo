@@ -110,6 +110,10 @@ setup(name=PACKAGENAME,
       version=VERSION,
       description=DESCRIPTION,
       scripts=scripts,
+      extras_require=dict(
+          plotting=['matplotlib>=1.4'],
+          docs=['sphinx_rtd_theme']
+      ),
       install_requires=['numpy', 'scipy', 'astropy', 'scikit-image',
                         'matplotlib', 'scikit-learn', 'h5py'],
       author=AUTHOR,

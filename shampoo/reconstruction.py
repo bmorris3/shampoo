@@ -183,6 +183,17 @@ class Hologram(object):
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
+        """
+        Load a hologram from a TIF file.
+
+        This class method takes the path to the TIF file as the first argument.
+        All other arguments are the same as `~shampoo.Hologram`.
+
+        Parameters
+        ----------
+        hologram_path : str
+            Path to the hologram to load
+        """
         hologram = _load_hologram(hologram_path)
         return cls(hologram, **kwargs)
 

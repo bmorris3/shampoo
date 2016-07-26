@@ -86,7 +86,7 @@ class Mock(object):
         else:
             return Mock()
 
-MOCK_MODULES = ['pyfftw', 'h5py']
+MOCK_MODULES = ['pyfftw', 'h5py', 'hdf5']
 for mod_name in MOCK_MODULES:
     sys.modules[mod_name] = Mock()
 
@@ -179,3 +179,8 @@ if eval(setup_cfg.get('edit_on_github')):
 
     edit_on_github_source_root = ""
     edit_on_github_doc_root = "docs"
+
+# Add additional Sphinx extensions:
+extensions += ['matplotlib.sphinxext.mathmpl',
+               'matplotlib.sphinxext.only_directives',
+               'matplotlib.sphinxext.plot_directive']

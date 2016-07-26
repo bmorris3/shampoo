@@ -29,7 +29,9 @@ General Documentation
 
 .. toctree::
    :maxdepth: 2
-   
+
+   installation
+   getting_started
    api
 
 .. _shampoo_authors:

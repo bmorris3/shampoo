@@ -3,3 +3,7 @@
 .. _Matplotlib: http://www.matplotlib.org
 .. _Nose: https://nose.readthedocs.org
 .. _Skimage: http://scikit-image.org
+.. _pyfftw: https://hgomersall.github.io/pyFFTW/
+.. _Scipy: https://www.scipy.org
+.. _Sklearn: http://scikit-learn.org/stable/
+.. _h5py: http://www.h5py.org
