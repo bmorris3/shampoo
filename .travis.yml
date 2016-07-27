@@ -28,7 +28,7 @@ env:
         - NUMPY_VERSION=stable
         - ASTROPY_VERSION=stable
         - SETUP_CMD='test'
-        - PIP_DEPENDENCIES=''
+        - PIP_DEPENDENCIES='mst_clustering'
         - CONDA_DEPENDENCIES='scipy h5py scipy matplotlib scikit-image scikit-learn hdf5'
     matrix:
         # Make sure that egg_info works without dependencies
