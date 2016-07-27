@@ -111,7 +111,7 @@ setup(name=PACKAGENAME,
       description=DESCRIPTION,
       scripts=scripts,
       extras_require=dict(
-          plotting=['matplotlib>=1.4'],
+          plotting=['matplotlib'],
           docs=['sphinx_rtd_theme']
       ),
       install_requires=['numpy', 'scipy', 'astropy', 'scikit-image',
