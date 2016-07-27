@@ -14,6 +14,7 @@ environment:
       # so Cython is required for testing. If your package does not include
       # Cython code, you can set CONDA_DEPENDENCIES=''
       CONDA_DEPENDENCIES: "numpy Cython sphinx scipy matplotlib scikit-image astropy h5py scikit-learn"
+      PIP_DEPENDENCIES: "mst_clustering"
 
   matrix:
 
@@ -22,12 +23,12 @@ environment:
       # the latest Python 3 release.
 
       - PYTHON_VERSION: "2.7"
-        ASTROPY_VERSION: "1.0"
-        NUMPY_VERSION: "1.9.1"
+        ASTROPY_VERSION: "stable"
+        NUMPY_VERSION: "stable"
 
-      - PYTHON_VERSION: "3.4"
-        ASTROPY_VERSION: "1.0"
-        NUMPY_VERSION: "1.9.1"
+      - PYTHON_VERSION: "3.5"
+        ASTROPY_VERSION: "stable"
+        NUMPY_VERSION: "stable"
 
 platform:
     -x64
