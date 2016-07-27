@@ -1,7 +1,9 @@
-numpy
+numpy>=1.9
 matplotlib
 Cython
 astropy-helpers
 astropy
 scikit-image
 scipy
+h5py
+mst_clustering
