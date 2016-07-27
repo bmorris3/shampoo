@@ -1,9 +1,0 @@
-Cython
-numpy>=1.9
-scipy
-matplotlib
-astropy-helpers
-astropy
-h5py
-mst_clustering
-scikit-image

@@ -1,0 +1,14 @@
+name: shampoo
+
+channels:
+    - astropy
+
+dependencies:
+    - astropy
+    - h5py
+    - matplotlib
+    - numpy
+    - scikit-image
+    - scikit-learn
+    - pip:
+        - mst_clustering
