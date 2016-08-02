@@ -401,7 +401,7 @@ class Hologram(object):
         represented as ``G`` in the literature.
 
         For reference, see Eqn 3.22 of Schnars & Juptner (2002) Meas. Sci.
-        Technol. 13 R85-R101 [1]_.
+        Technol. 13 R85-R101 [1]_,
 
         .. [1] http://x-ray.ucsd.edu/mediawiki/images/d/df/Digital_recording_numerical_reconstruction.pdf
 
@@ -502,9 +502,7 @@ class Hologram(object):
             plt.show()
         return spectrum_centroid
 
-    def reconstruct_multithread(self, propagation_distances, threads=8,
-                                track_objects=True, save_png_to_disk=None,
-                                phase=True, intensity=False):
+    def reconstruct_multithread(self, propagation_distances, threads=4):
         """
         Reconstruct phase or intensity for multiple distances, for one hologram.
 
@@ -514,17 +512,6 @@ class Hologram(object):
             Propagation distances to reconstruct
         threads : int
             Number of threads to use via `~multiprocessing`
-        track_objects : bool
-            Track objects (cells)? Default is True.
-        save_png_to_disk : None or path
-            If ``None``, do not save reconstructions to disk. If string,
-            save reconstructions to disk at the path ``save_to_disk``.
-        phase : bool
-            Reconstruct phase only. Only one of phase or intensity can be True.
-            Default is True.
-        intensity : bool
-            Reconstruct phase only. Only one of phase or intensity can be True.
-            Default is false.
 
         Returns
         -------
@@ -532,107 +519,28 @@ class Hologram(object):
             Reconstructed waves for each propagation distance in a data cube of
             dimensions (N, m, m) where N is the number of propagation distances
             and m is the number of pixels on each axis of each reconstruction.
-
-        positions : `~numpy.ndarray`
-            (x, y, z) positions of particles detected through the z-stack
         """
-        if phase and intensity:
-            raise ValueError("Only phase or intensity may be saved")
-
-        if phase:
-            # Collect only the phase or intensity
-            collect_attr = 'phase'
-        elif intensity:
-            collect_attr = 'intensity'
-        else:
-            raise ValueError("I think you want to reconstruct something. "
-                             "Set either phase or intensity to True to "
-                             "reconstruct.")
 
         n_z_slices = len(propagation_distances)
-        example_wave = self.reconstruct(propagation_distances[0])
 
-        wave_shape = example_wave.intensity.shape
+        wave_shape = self.hologram.shape
         wave_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
                                dtype=np.complex128)
 
-        blob_collection = []
-        margin = 100
-        def reconstruct_and_locate(index, margin=margin, kernel_radius=4.0):
+        def _reconstruct(index):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
-            wave_cube[index, ...] = wave.reconstructed_wave
-            all_blobs = []
-            if track_objects:
-                # Crop reconstructed image, convolve, peak-find
-                cropped_img = wave.phase[margin:-margin, margin:-margin]
-                best_convolved_phase = convolve_fft(cropped_img,
-                                                    MexicanHat2DKernel(kernel_radius))
-
-                best_convolved_phase_copy = best_convolved_phase.copy(order='C')
-
-                # Find positive peaks
-                blob_doh_kwargs = dict(threshold=0.00007,
-                                       min_sigma=2,
-                                       max_sigma=10)
-                blobs = blob_doh(best_convolved_phase_copy, **blob_doh_kwargs)
-
-                # Find negative peaks
-                negative_phase = -best_convolved_phase_copy
-                negative_phase += (np.median(best_convolved_phase_copy) -
-                                   np.median(negative_phase))
-                negative_blobs = blob_doh(negative_phase, **blob_doh_kwargs)
-
-                all_blobs = []
-                for blob in blobs:
-                    if blob.size > 0:
-                        all_blobs.append(blob)
-
-                for neg_blob in negative_blobs:
-                    if neg_blob.size > 0:
-                        all_blobs.append(neg_blob)
-
-                if len(all_blobs) > 0:
-                    all_blobs = np.vstack(all_blobs)
-
-
-                # Blobs get returned in rows with [x, y, radius], so save each
-                # set of blobs with the propagation distance to record z
-                blob_collection.append((np.float64(all_blobs),
-                                        propagation_distances[index]))
-
-
-            # If save pngs:
-            if save_png_to_disk is not None:
-                path = "{0}/{1:.4f}.png".format(save_png_to_disk,
-                                                propagation_distances[index])
-                save_scaled_image(wave.phase, path, margin, all_blobs)
+            wave_cube[index, ...] = wave._reconstructed_wave
 
         # Make the Pool of workers
         pool = ThreadPool(threads)
-        pool.map(reconstruct_and_locate, range(n_z_slices))
+        pool.map(_reconstruct, range(n_z_slices))
 
         # close the pool and wait for the work to finish
         pool.close()
         pool.join()
 
-        if track_objects:
-            # Get all detected cell positions
-            positions = []
-            for blobs_and_z in blob_collection:
-                blobs, z = blobs_and_z
-                if len(blobs.shape) > 1:
-                    # Replace the blob radii with the z position
-                    blobs[:, 2] = z
-                    blobs[:, 1] += margin
-                    blobs[:, 0] += margin
-                    positions.append(blobs)
-
-            positions = np.vstack(positions)
-        else:
-            positions = None
-
-        return wave_cube, positions
+        return wave_cube
 
     def detect_specimens(self, reconstructed_wave, propagation_distance,
                          margin=100, kernel_radius=4.0, save_png_to_disk=None):
@@ -716,7 +624,7 @@ class ReconstructedWave(object):
     arrays.
     """
     def __init__(self, reconstructed_wave):
-        self.reconstructed_wave = reconstructed_wave
+        self._reconstructed_wave = reconstructed_wave
         self._intensity_image = None
         self._phase_image = None
         self.random_seed = RANDOM_SEED
@@ -724,21 +632,30 @@ class ReconstructedWave(object):
     @property
     def intensity(self):
         """
-        `~numpy.ndarray` of the reconstructed intensity.
+        `~numpy.ndarray` of the reconstructed intensity
         """
         if self._intensity_image is None:
-            self._intensity_image = np.abs(self.reconstructed_wave)
+            self._intensity_image = np.abs(self._reconstructed_wave)
         return self._intensity_image
 
     @property
     def phase(self):
         """
         `~numpy.ndarray` of the reconstructed, unwrapped phase.
+
+        Returns the unwrapped phase using `~skimage.restoration.unwrap_phase`.
         """
         if self._phase_image is None:
-            self._phase_image = unwrap_phase(self.reconstructed_wave)
+            self._phase_image = unwrap_phase(self._reconstructed_wave)
 
         return self._phase_image
+
+    @property
+    def reconstructed_wave(self):
+        """
+        `~numpy.ndarray` of the complex reconstructed wave
+        """
+        return self._reconstructed_wave
 
     def plot(self, phase=False, intensity=False, all=False,
              cmap=plt.cm.binary_r):

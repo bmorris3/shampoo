@@ -59,7 +59,7 @@ configuration, start up python, and type::
 If there are no errors, you are good to go!
 
 More
-++++
+~~~~
 
 shampoo follows `Astropy`_'s guidelines for affiliated packages--installation
 and testing for the two are quite similar! Please see Astropy's
