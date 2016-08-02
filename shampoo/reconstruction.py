@@ -101,8 +101,11 @@ def _load_hologram(hologram_path):
     """
     Load a hologram from path ``hologram_path`` using scikit-image and numpy.
     """
-    return np.array(imread(hologram_path), dtype=np.float64)
-
+    try:
+        from PIL import Image
+        return np.array(Image.open(hologram_path, 'r'), dtype=np.float64)
+    except ImportError:
+        return np.array(imread(hologram_path), dtype=np.float64)
 
 def _find_peak_centroid(image, gaussian_width=10):
     """
@@ -559,7 +562,7 @@ class Hologram(object):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
             wave_cube[index, ...] = wave.reconstructed_wave
-
+            all_blobs = []
             if track_objects:
                 # Crop reconstructed image, convolve, peak-find
                 cropped_img = wave.phase[margin:-margin, margin:-margin]
@@ -592,16 +595,18 @@ class Hologram(object):
                 if len(all_blobs) > 0:
                     all_blobs = np.vstack(all_blobs)
 
-                # If save pngs:
-                if save_png_to_disk is not None:
-                    path = "{0}/{1:.4f}.png".format(save_png_to_disk,
-                                                    propagation_distances[index])
-                    save_scaled_image(wave.phase, path, margin, all_blobs)
 
                 # Blobs get returned in rows with [x, y, radius], so save each
                 # set of blobs with the propagation distance to record z
                 blob_collection.append((np.float64(all_blobs),
                                         propagation_distances[index]))
+
+
+            # If save pngs:
+            if save_png_to_disk is not None:
+                path = "{0}/{1:.4f}.png".format(save_png_to_disk,
+                                                propagation_distances[index])
+                save_scaled_image(wave.phase, path, margin, all_blobs)
 
         # Make the Pool of workers
         pool = ThreadPool(threads)
