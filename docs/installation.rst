@@ -9,6 +9,12 @@ Installation
 Requirements
 ============
 
+.. note::
+
+    Users are strongly recommended to manage these dependencies with the
+    excellent `Anaconda Python Distribution <http://continuum.io/downloads>`_
+    which provides easy access to all of the above dependencies and more.
+
 **shampoo** works on Linux, Mac OS X and Windows.
 It requires Python 3.5+ or 2.7 (earlier versions are not
 supported) as well as the following packages:
@@ -19,17 +25,14 @@ supported) as well as the following packages:
 * `skimage`_
 * `sklearn`_
 * `Astropy`_
+* `h5py`_
 
 Optional packages:
 
-* `pyfftw`_
-* `h5py`_
+* `pyfftw`_ - This package is **highly** recommended. It will speed up your FFT
+  computations by a factor of 2-3 for holograms with pixel dimensions
+  :math:`2^n` where :math:`n` is an integer.
 
-.. note::
-
-    Users are strongly recommended to manage these dependencies with the
-    excellent `Anaconda Python Distribution <http://continuum.io/downloads>`_
-    which provides easy access to all of the above dependencies and more.
 
 Install shampoo
 ===============

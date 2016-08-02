@@ -32,6 +32,7 @@ General Documentation
 
    installation
    getting_started
+   tutorials/index
    api
 
 .. _shampoo_authors:

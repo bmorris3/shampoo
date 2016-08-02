@@ -7,8 +7,8 @@ Getting Started
 ***************
 
 
-Numerical Reconstruction
-========================
+Simple numerical reconstruction
+===============================
 
 shampoo comes with a sample hologram of a US Air Force resolution target
 to reconstruct in the ``data`` directory. Let's reconstruct it with shampoo.
@@ -79,3 +79,7 @@ Now you're ready to reconstruct your holograms!
 
     This release should be considered a "preview", as shampoo is still under
     development.
+
+For more tutorials, see the Tutorials documentation.
+
+:ref:`Return to Top <_getting_started>`
