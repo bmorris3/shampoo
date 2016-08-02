@@ -164,7 +164,7 @@ about 2.2x faster than the full-sized one.
     propagation_distance = 0.03685  # m
 
     # Construct the hologram object, reconstruct the complex wave
-    h = Hologram.from_tif(hologram_path, crop_fraction=1/2)
+    h = Hologram.from_tif(hologram_path, crop_fraction=0.5)
     wave = h.reconstruct(propagation_distance)
 
     # Plot the reconstructed phase/intensity
