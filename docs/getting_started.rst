@@ -82,4 +82,4 @@ Now you're ready to reconstruct your holograms!
 
 For more tutorials, see the Tutorials documentation.
 
-:ref:`Return to Top <_getting_started>`
+:ref:`Return to Top <getting_started>`
