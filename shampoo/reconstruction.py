@@ -136,6 +136,19 @@ def _crop_image(image, crop_fraction):
     return cropped_image
 
 
+def _crop_to_square(image):
+    """
+    Ensure that hologram is square.
+    """
+    sh = image.shape
+    if sh[0] != sh[1]:
+        square_image = image[:min(sh), :min(sh)]
+    else:
+        square_image = image
+
+    return square_image
+
+
 class CropEfficiencyWarning(AstropyUserWarning):
     pass
 
@@ -161,12 +174,18 @@ class Hologram(object):
             Pixel width in x-direction (unbinned)
         dy : float [meters]
             Pixel width in y-direction (unbinned)
+
+        Notes
+        -----
+        Non-square holograms will be cropped to a square with the dimensions of
+        the smallest dimension.
         """
         self.crop_fraction = crop_fraction
         self.rebin_factor = rebin_factor
 
         # Rebin the hologram
-        binned_hologram = rebin_image(np.float64(hologram), self.rebin_factor)
+        square_hologram = _crop_to_square(np.float64(hologram))
+        binned_hologram = rebin_image(square_hologram, self.rebin_factor)
 
         # Crop the hologram by factor crop_factor, centered on original center
         if crop_fraction is not None:

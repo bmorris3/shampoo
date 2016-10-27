@@ -78,3 +78,15 @@ def test_multiple_reconstructions():
     # check hologram doesn't get modified again
     assert np.all(h_apodized1 == h_apodized2)
 
+
+def test_nonsquare_hologram():
+    sq_holo = _example_hologram()
+    nonsq_holo = sq_holo[:-10, :]
+
+    holo = Hologram(nonsq_holo)
+    w = holo.reconstruct(0.5)
+
+    phase_shape = w.phase.shape
+
+    assert phase_shape[0] == min(nonsq_holo.shape)
+    assert phase_shape[1] == min(nonsq_holo.shape)
