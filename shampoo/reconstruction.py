@@ -42,6 +42,7 @@ __all__ = ['Hologram', 'ReconstructedWave', 'unwrap_phase']
 RANDOM_SEED = 42
 TWO_TO_N = [2**i for i in range(13)]
 
+
 def rebin_image(a, binning_factor):
     # Courtesy of J.F. Sebastian: http://stackoverflow.com/a/8090605
     if binning_factor == 1:
@@ -106,6 +107,7 @@ def _load_hologram(hologram_path):
         return np.array(Image.open(hologram_path, 'r'), dtype=np.float64)
     except ImportError:
         return np.array(imread(hologram_path), dtype=np.float64)
+
 
 def _find_peak_centroid(image, gaussian_width=10):
     """
@@ -388,13 +390,13 @@ class Hologram(object):
 
         return digital_phase_mask
 
-    def apodize(self, arr, alpha=0.075):
+    def apodize(self, array, alpha=0.075):
         """
         Force the magnitude of an array to go to zero at the boundaries.
 
         Parameters
         ----------
-        arr : `~numpy.ndarray`
+        array : `~numpy.ndarray`
             Array to apodize
         alpha : float between zero and one
             Alpha parameter for the Tukey window function. For best results,
@@ -407,12 +409,9 @@ class Hologram(object):
         """
         x, y = self.mgrid
         n = len(x[0])
-        if not self.hologram_apodized:
-            tukey_window = tukey(n, alpha)
-            arr *= tukey_window[:, np.newaxis] * tukey_window
-
-            self.hologram_apodized = True
-        return arr
+        tukey_window = tukey(n, alpha)
+        apodized_array = array * tukey_window[:, np.newaxis] * tukey_window
+        return apodized_array
 
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
         """
