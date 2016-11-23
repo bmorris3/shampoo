@@ -203,7 +203,6 @@ class Hologram(object):
         self.dy = dy*rebin_factor
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
         self.random_seed = RANDOM_SEED
-        self.hologram_apodized = False
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
