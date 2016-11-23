@@ -72,8 +72,8 @@ def test_multiple_reconstructions():
     w2 = holo.reconstruct(0.8)
     h_apodized2 = holo.hologram.copy()
 
-    # check hologram gets modified in place first time
-    assert not np.all(h_raw == h_apodized1)
+    # check hologram doesn't get modified in place first time
+    assert np.all(h_raw == h_apodized1)
 
     # check hologram doesn't get modified again
     assert np.all(h_apodized1 == h_apodized2)
