@@ -31,6 +31,7 @@ from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
 # fails, import scipy's FFT module instead
@@ -378,9 +379,32 @@ class Hologram(object):
         digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
-            fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-            ax[0].imshow(smooth_phase_image, origin='lower')
-            ax[1].imshow(field_curvature_mask, origin='lower')
+
+            # Set up figure and image grid
+            fig = plt.figure(figsize=(12, 5))
+
+            grid = ImageGrid(fig, 111,
+                             nrows_ncols=(1, 2),
+                             axes_pad=0.15,
+                             share_all=True,
+                             cbar_location="right",
+                             cbar_mode="single",
+                             cbar_size="7%",
+                             cbar_pad=0.15,
+                             )
+
+            # Add data to image grid
+            for ax, arr, title in zip(grid,
+                                      [smooth_phase_image, field_curvature_mask],
+                                      ['smothed phase image', 'curvature fit']):
+                im = ax.imshow(arr, vmin=smooth_phase_image.min(),
+                               vmax=smooth_phase_image.max(),
+                               cmap=plt.cm.plasma, origin='lower',
+                               interpolation='nearest')
+                ax.set_title(title)
+            # Colorbar
+            ax.cax.colorbar(im)
+            ax.cax.toggle_label(True)
             plt.show()
 
         return digital_phase_mask
