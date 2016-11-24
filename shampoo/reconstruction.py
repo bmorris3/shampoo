@@ -220,8 +220,6 @@ class Hologram(object):
             of the hologram? Default is False.
         cache : bool
             Cache reconstructions onto the hologram object? Default is False.
-        digital_phase_mask : `~numpy.ndarray`
-            Digital phase mask, if you have one precomputed. Default is None.
 
         Returns
         -------
