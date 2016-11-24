@@ -64,19 +64,28 @@ def test_multiple_reconstructions():
     At commit cc730bd and earlier, the Hologram.apodize function modified
     the Hologram.hologram array every time Hologram.reconstruct was called.
     This tests that that should not happen anymore.
+
+    Also test that the caching machinery is working.
     """
+
+    propagation_distances = [0.5, 0.8]
     holo = Hologram(_example_hologram())
     h_raw = holo.hologram.copy()
-    w1 = holo.reconstruct(0.5)
-    h_apodized1 = holo.hologram.copy()
-    w2 = holo.reconstruct(0.8)
-    h_apodized2 = holo.hologram.copy()
+    holograms = []
+
+    for d in propagation_distances:
+        w = holo.reconstruct(d, cache=True)
+        holograms.append(holo.hologram)
 
     # check hologram doesn't get modified in place first time
-    assert np.all(h_raw == h_apodized1)
+    assert np.all(h_raw == holograms[0])
 
     # check hologram doesn't get modified again
-    assert np.all(h_apodized1 == h_apodized2)
+    assert np.all(holograms[0] == holograms[1])
+
+    # check that the cached reconstructions exist
+    for d in propagation_distances:
+        assert d in holo.reconstructions
 
 
 def test_nonsquare_hologram():
