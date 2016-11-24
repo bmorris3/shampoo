@@ -79,25 +79,6 @@ def shift_peak(arr, shifts_xy):
                    int(shifts_xy[1]), axis=1)
 
 
-def make_items_hashable(input_iterable):
-    """
-    Take a list or tuple of objects, convert any items that are lists into
-    tuples to make them hashable.
-
-    Parameters
-    ----------
-    input_iterable : list or tuple
-        Items to convert to hashable types
-
-    Returns
-    -------
-    hashable_tuple : tuple
-        ``input_iterable`` made hashable
-    """
-    return tuple([tuple(i) if isinstance(i, list) or isinstance(i, np.ndarray)
-                  else i for i in input_iterable])
-
-
 def _load_hologram(hologram_path):
     """
     Load a hologram from path ``hologram_path`` using scikit-image and numpy.
@@ -221,12 +202,13 @@ class Hologram(object):
         return cls(hologram, **kwargs)
 
     def reconstruct(self, propagation_distance,
-                    plot_aberration_correction=False,
-                    plot_fourier_peak=False,
-                    cache=False, digital_phase_mask=None):
+                    plot_aberration_correction=False, plot_fourier_peak=False,
+                    cache=False):
         """
-        Wrapper around `~shampoo.reconstruction.Hologram.reconstruct_wave` for
-        caching.
+        Reconstruct the wave at ``propagation_distance``.
+
+        If ``cache`` is `True`, the reconstructed wave will be cached onto the
+        `~shampoo.reconstruction.Hologram` object for quick retrieval.
 
         Parameters
         ----------
@@ -247,31 +229,31 @@ class Hologram(object):
         reconstructed_wave : `~shampoo.reconstruction.ReconstructedWave`
             The reconstructed wave.
         """
-
         if cache:
-            cache_key = make_items_hashable((propagation_distance,
-                                             self.wavelength, self.dx, self.dy))
+            # Cache dictionary is accessible by keys = propagation distances
+            cache_key = propagation_distance
 
-        # If this reconstruction is cached, get it.
-        if cache and cache_key in self.reconstructions:
-            reconstructed_wave = self.reconstructions[cache_key]
+            # If this reconstruction is cached, get it.
+            if cache_key in self.reconstructions:
+                reconstructed_wave = self.reconstructions[cache_key]
 
-        # If this reconstruction is not in the cache,
-        # or if the cache is turned off, do the reconstruction
-        elif (cache and cache_key not in self.reconstructions) or not cache:
-            reconstructed_wave = self.reconstruct_wave(propagation_distance, digital_phase_mask,
+            # If this reconstruction is not cached, calculate it and cache it
+            else:
+                reconstructed_wave = self._reconstruct(propagation_distance,
                                                        plot_aberration_correction=plot_aberration_correction,
                                                        plot_fourier_peak=plot_fourier_peak)
+                self.reconstructions[cache_key] = reconstructed_wave
 
-        # If this reconstruction should be cached and it is not:
-        if cache and cache_key not in self.reconstructions:
-            self.reconstructions[cache_key] = ReconstructedWave(reconstructed_wave)
+        else:
+            reconstructed_wave = self._reconstruct(propagation_distance,
+                                                   plot_aberration_correction=plot_aberration_correction,
+                                                   plot_fourier_peak=plot_fourier_peak)
 
         return ReconstructedWave(reconstructed_wave)
 
-    def reconstruct_wave(self, propagation_distance, digital_phase_mask=None,
-                         plot_aberration_correction=False,
-                         plot_fourier_peak=False):
+    def _reconstruct(self, propagation_distance,
+                     plot_aberration_correction=False,
+                     plot_fourier_peak=False):
         """
         Reconstruct wave from hologram stored in file ``hologram_path`` at
         propagation distance ``propagation_distance``.
@@ -280,8 +262,6 @@ class Hologram(object):
         ----------
         propagation_distance : float
             Propagation distance [m]
-        digital_phase_mask : `~numpy.ndarray`
-            Use pre-calculated digital phase mask. Default is None.
         plot_aberration_correction : bool
             Plot the abberation correction visualization? Default is False.
         plot_fourier_peak : bool
@@ -315,16 +295,14 @@ class Hologram(object):
         # Calculate Fourier transform of impulse response function
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
 
-        # if digital_phase_mask is None, calculate one
-        if digital_phase_mask is None:
-            # Center the spectral peak
-            shifted_F_hologram = shift_peak(F_hologram * mask,
-                                            [self.n/2-x_peak, self.n/2-y_peak])
+        # Now calculate digital phase mask. First center the spectral peak:
+        shifted_F_hologram = shift_peak(F_hologram * mask,
+                                        [self.n/2-x_peak, self.n/2-y_peak])
 
-            # Apodize the result
-            psi = self.apodize(shifted_F_hologram * G)
-            digital_phase_mask = self.get_digital_phase_mask(psi,
-                                                             plots=plot_aberration_correction)
+        # Apodize the result
+        psi = self.apodize(shifted_F_hologram * G)
+        digital_phase_mask = self.get_digital_phase_mask(psi,
+                                                         plots=plot_aberration_correction)
 
         # Reconstruct the image
         psi = G * shift_peak(fft2(apodized_hologram * digital_phase_mask) * mask,
