@@ -378,9 +378,7 @@ class Hologram(object):
         digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
-            print(smooth_phase_image)
             fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-            #ax[0].imshow(unwrapped_phase_image, origin='lower')
             ax[0].imshow(smooth_phase_image, origin='lower')
             ax[1].imshow(field_curvature_mask, origin='lower')
             plt.show()
@@ -499,7 +497,8 @@ class Hologram(object):
             hologram near the real image.
         """
         margin = int(self.n*margin_factor)
-        abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        #abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        abs_fourier_arr = np.abs(fourier_arr)[margin:self.n//2, margin:-margin]
         spectrum_centroid = _find_peak_centroid(abs_fourier_arr,
                                                 gaussian_width=10) + margin
 
