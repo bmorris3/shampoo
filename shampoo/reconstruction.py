@@ -18,6 +18,8 @@ from multiprocessing.dummy import Pool as ThreadPool
 from .vis import save_scaled_image
 
 import numpy as np
+from numpy.compat import integer_types
+
 from scipy.ndimage import gaussian_filter
 from scipy.signal import tukey
 
@@ -29,6 +31,7 @@ from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
 
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import ImageGrid
 
 # Try importing optional dependency PyFFTW for Fourier transforms. If the import
 # fails, import scipy's FFT module instead
@@ -53,29 +56,50 @@ def rebin_image(a, binning_factor):
     return a.reshape(sh).mean(-1).mean(1)
 
 
-def shift_peak(arr, shifts_xy):
+def fftshift(x, additional_shift=None, axes=None):
     """
-    2D array shifter.
+    Shift the zero-frequency component to the center of the spectrum, or with
+    some additional offset from the center.
 
-    Take 2D array `arr` and "roll" the contents in two dimensions, with shift
-    magnitudes set by the elements of `shifts` for the ``x`` and ``y``
-    directions respectively.
+    This is a more generic fork of `~numpy.fft.fftshift`, which doesn't support
+    additional shifts.
+
 
     Parameters
     ----------
-    arr : ndarray with dimensions ``N`` x ``M``
-        Array to shift
-    shifts_xy : list of length ``M``
-        Desired shifts in ``x`` and ``y`` directions respectively
+    x : array_like
+        Input array.
+    additional_shift : list of length ``M``
+        Desired additional shifts in ``x`` and ``y`` directions respectively
+    axes : int or shape tuple, optional
+        Axes over which to shift.  Default is None, which shifts all axes.
 
     Returns
     -------
-    shifted_arr : ndarray
-        Input array with elements shifted ``shifts_xy[0]`` pixels in ``x`` and
-        ``shifts_xy[1]`` pixels in ``y``.
+    y : `~numpy.ndarray`
+        The shifted array.
     """
-    return np.roll(np.roll(arr, int(shifts_xy[0]), axis=0),
-                   int(shifts_xy[1]), axis=1)
+    tmp = np.asarray(x)
+    ndim = len(tmp.shape)
+    if axes is None:
+        axes = list(range(ndim))
+    elif isinstance(axes, integer_types):
+        axes = (axes,)
+
+    # If no additional shift is supplied, reproduce `numpy.fft.fftshift` result
+    if additional_shift is None:
+        additional_shift = [0, 0]
+
+    y = tmp
+    for k, extra_shift in zip(axes, additional_shift):
+        n = tmp.shape[k]
+        if (n+1)//2 - extra_shift < n:
+            p2 = (n+1)//2 - extra_shift
+        else:
+            p2 = abs(extra_shift) - (n+1)//2
+        mylist = np.concatenate((np.arange(p2, n), np.arange(0, p2)))
+        y = np.take(y, mylist, k)
+    return y
 
 
 def _load_hologram(hologram_path):
@@ -183,6 +207,7 @@ class Hologram(object):
         self.dy = dy*rebin_factor
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
         self.random_seed = RANDOM_SEED
+        self.apodization_window_function = None
 
     @classmethod
     def from_tif(cls, hologram_path, **kwargs):
@@ -274,7 +299,7 @@ class Hologram(object):
         apodized_hologram = self.apodize(self.hologram)
 
         # Isolate the real image in Fourier space, find spectral peak
-        F_hologram = fft2(apodized_hologram)
+        ft_hologram = fft2(apodized_hologram)
 
         # Create mask based on coords of spectral peak:
         if self.rebin_factor != 1:
@@ -284,7 +309,7 @@ class Hologram(object):
         else:
             mask_radius = 150.
 
-        x_peak, y_peak = self.fourier_peak_centroid(F_hologram, mask_radius,
+        x_peak, y_peak = self.fourier_peak_centroid(ft_hologram, mask_radius,
                                                     plot=plot_fourier_peak)
 
         mask = self.real_image_mask(x_peak, y_peak, mask_radius)
@@ -293,19 +318,18 @@ class Hologram(object):
         G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
 
         # Now calculate digital phase mask. First center the spectral peak:
-        shifted_F_hologram = shift_peak(F_hologram * mask,
-                                        [self.n/2-x_peak, self.n/2-y_peak])
+        shifted_ft_hologram = fftshift(ft_hologram * mask, [-x_peak, -y_peak])
 
         # Apodize the result
-        psi = self.apodize(shifted_F_hologram * G)
+        psi = self.apodize(shifted_ft_hologram * G)
         digital_phase_mask = self.get_digital_phase_mask(psi,
                                                          plots=plot_aberration_correction)
 
         # Reconstruct the image
-        psi = G * shift_peak(fft2(apodized_hologram * digital_phase_mask) * mask,
-                             [self.n/2 - x_peak, self.n/2 - y_peak])
+        psi = G * fftshift(fft2(apodized_hologram * digital_phase_mask) * mask,
+                           [-x_peak, -y_peak])
 
-        reconstructed_wave = shift_peak(ifft2(psi), [self.n/2, self.n/2])
+        reconstructed_wave = fftshift(ifft2(psi))
         return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
@@ -334,7 +358,7 @@ class Hologram(object):
         # Need to flip mgrid indices for this least squares solution
         y, x = self.mgrid - self.n/2
 
-        inverse_psi = shift_peak(ifft2(psi), [self.n/2, self.n/2])
+        inverse_psi = fftshift(ifft2(psi))
 
         unwrapped_phase_image = unwrap_phase(inverse_psi)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
@@ -355,11 +379,32 @@ class Hologram(object):
         digital_phase_mask = np.exp(-1j*self.wavenumber * field_curvature_mask)
 
         if plots:
-            print(smooth_phase_image)
-            fig, ax = plt.subplots(1, 2, figsize=(14, 8))
-            #ax[0].imshow(unwrapped_phase_image, origin='lower')
-            ax[0].imshow(smooth_phase_image, origin='lower')
-            ax[1].imshow(field_curvature_mask, origin='lower')
+
+            # Set up figure and image grid
+            fig = plt.figure(figsize=(12, 5))
+
+            grid = ImageGrid(fig, 111,
+                             nrows_ncols=(1, 2),
+                             axes_pad=0.15,
+                             share_all=True,
+                             cbar_location="right",
+                             cbar_mode="single",
+                             cbar_size="7%",
+                             cbar_pad=0.15,
+                             )
+
+            # Add data to image grid
+            for ax, arr, title in zip(grid,
+                                      [smooth_phase_image, field_curvature_mask],
+                                      ['smothed phase image', 'curvature fit']):
+                im = ax.imshow(arr, vmin=smooth_phase_image.min(),
+                               vmax=smooth_phase_image.max(),
+                               cmap=plt.cm.plasma, origin='lower',
+                               interpolation='nearest')
+                ax.set_title(title)
+            # Colorbar
+            ax.cax.colorbar(im)
+            ax.cax.toggle_label(True)
             plt.show()
 
         return digital_phase_mask
@@ -381,10 +426,13 @@ class Hologram(object):
         apodized_arr : `~numpy.ndarray`
             Apodized array
         """
-        x, y = self.mgrid
-        n = len(x[0])
-        tukey_window = tukey(n, alpha)
-        apodized_array = array * tukey_window[:, np.newaxis] * tukey_window
+        if self.apodization_window_function is None:
+            x, y = self.mgrid
+            n = len(x[0])
+            tukey_window = tukey(n, alpha)
+            self.apodization_window_function = tukey_window[:, np.newaxis] * tukey_window
+
+        apodized_array = array * self.apodization_window_function
         return apodized_array
 
     def fourier_trans_of_impulse_resp_func(self, propagation_distance):
@@ -473,7 +521,8 @@ class Hologram(object):
             hologram near the real image.
         """
         margin = int(self.n*margin_factor)
-        abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        #abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
+        abs_fourier_arr = np.abs(fourier_arr)[margin:self.n//2, margin:-margin]
         spectrum_centroid = _find_peak_centroid(abs_fourier_arr,
                                                 gaussian_width=10) + margin
 
@@ -608,7 +657,6 @@ def unwrap_phase(reconstructed_wave, seed=RANDOM_SEED):
     return skimage_unwrap_phase(2 * np.arctan(reconstructed_wave.imag /
                                               reconstructed_wave.real),
                                 seed=seed)
-
 
 class ReconstructedWave(object):
     """
