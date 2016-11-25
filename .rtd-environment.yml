@@ -10,5 +10,6 @@ dependencies:
     - numpy
     - scikit-image
     - scikit-learn
+    - pyfftw
     - pip:
         - mst_clustering

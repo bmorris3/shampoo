@@ -112,7 +112,7 @@ setup(name=PACKAGENAME,
           docs=['sphinx_rtd_theme']
       ),
       install_requires=['numpy', 'scipy', 'astropy', 'scikit-image',
-                        'matplotlib', 'scikit-learn'],
+                        'matplotlib', 'scikit-learn', 'pyfftw'],
       author=AUTHOR,
       author_email=AUTHOR_EMAIL,
       license=LICENSE,

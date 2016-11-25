@@ -16,9 +16,9 @@ import warnings
 from multiprocessing.dummy import Pool as ThreadPool
 
 from .vis import save_scaled_image
+from .fftutils import FFT, fftshift
 
 import numpy as np
-from numpy.compat import integer_types
 
 from scipy.ndimage import gaussian_filter
 from scipy.signal import tukey
@@ -33,16 +33,11 @@ from astropy.convolution import convolve_fft, MexicanHat2DKernel
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
 
-# Try importing optional dependency PyFFTW for Fourier transforms. If the import
-# fails, import scipy's FFT module instead
-try:
-    from pyfftw.interfaces.scipy_fftpack import fft2, ifft2
-except ImportError:
-    from scipy.fftpack import fft2, ifft2
-
 __all__ = ['Hologram', 'ReconstructedWave', 'unwrap_phase']
-RANDOM_SEED = 42
-TWO_TO_N = [2**i for i in range(13)]
+random_seed = 42
+two_to_n = [2 ** i for i in range(13)]
+float_precision = np.float64
+complex_precision = np.complex128
 
 
 def rebin_image(a, binning_factor):
@@ -54,52 +49,6 @@ def rebin_image(a, binning_factor):
     sh = (new_shape[0], a.shape[0]//new_shape[0], new_shape[1],
           a.shape[1]//new_shape[1])
     return a.reshape(sh).mean(-1).mean(1)
-
-
-def fftshift(x, additional_shift=None, axes=None):
-    """
-    Shift the zero-frequency component to the center of the spectrum, or with
-    some additional offset from the center.
-
-    This is a more generic fork of `~numpy.fft.fftshift`, which doesn't support
-    additional shifts.
-
-
-    Parameters
-    ----------
-    x : array_like
-        Input array.
-    additional_shift : list of length ``M``
-        Desired additional shifts in ``x`` and ``y`` directions respectively
-    axes : int or shape tuple, optional
-        Axes over which to shift.  Default is None, which shifts all axes.
-
-    Returns
-    -------
-    y : `~numpy.ndarray`
-        The shifted array.
-    """
-    tmp = np.asarray(x)
-    ndim = len(tmp.shape)
-    if axes is None:
-        axes = list(range(ndim))
-    elif isinstance(axes, integer_types):
-        axes = (axes,)
-
-    # If no additional shift is supplied, reproduce `numpy.fft.fftshift` result
-    if additional_shift is None:
-        additional_shift = [0, 0]
-
-    y = tmp
-    for k, extra_shift in zip(axes, additional_shift):
-        n = tmp.shape[k]
-        if (n+1)//2 - extra_shift < n:
-            p2 = (n+1)//2 - extra_shift
-        else:
-            p2 = abs(extra_shift) - (n+1)//2
-        mylist = np.concatenate((np.arange(p2, n), np.arange(0, p2)))
-        y = np.take(y, mylist, k)
-    return y
 
 
 def _load_hologram(hologram_path):
@@ -131,7 +80,7 @@ def _crop_image(image, crop_fraction):
 
     crop_length = int(image.shape[0] * crop_fraction)
 
-    if crop_length not in TWO_TO_N:
+    if crop_length not in two_to_n:
         message = ("Final dimensions after crop should be a power of 2^N. "
                    "Crop fraction of {0} yields dimensions ({1}, {1})"
                    .format(crop_fraction, crop_length))
@@ -164,7 +113,7 @@ class Hologram(object):
     Container for holograms and methods to reconstruct them.
     """
     def __init__(self, hologram, crop_fraction=None, wavelength=405e-9,
-                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6):
+                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6, threads=2):
         """
         Parameters
         ----------
@@ -190,7 +139,7 @@ class Hologram(object):
         self.rebin_factor = rebin_factor
 
         # Rebin the hologram
-        square_hologram = _crop_to_square(np.float64(hologram))
+        square_hologram = _crop_to_square(float_precision(hologram))
         binned_hologram = rebin_image(square_hologram, self.rebin_factor)
 
         # Crop the hologram by factor crop_factor, centered on original center
@@ -199,14 +148,18 @@ class Hologram(object):
         else:
             self.hologram = binned_hologram
 
+        # Construct an FFT object with shape/dtype of hologram:
+        self.fft = FFT(self.hologram.shape, float_precision, complex_precision,
+                       threads=threads)
+
         self.n = self.hologram.shape[0]
         self.wavelength = wavelength
-        self.wavenumber = 2*np.pi/self.wavelength
+        self.wavenumber = 2*np.pi / self.wavelength
         self.reconstructions = dict()
         self.dx = dx*rebin_factor
         self.dy = dy*rebin_factor
         self.mgrid = np.mgrid[0:self.n, 0:self.n]
-        self.random_seed = RANDOM_SEED
+        self.random_seed = random_seed
         self.apodization_window_function = None
 
     @classmethod
@@ -299,7 +252,7 @@ class Hologram(object):
         apodized_hologram = self.apodize(self.hologram)
 
         # Isolate the real image in Fourier space, find spectral peak
-        ft_hologram = fft2(apodized_hologram)
+        ft_hologram = self.fft.fft2(apodized_hologram)
 
         # Create mask based on coords of spectral peak:
         if self.rebin_factor != 1:
@@ -326,10 +279,10 @@ class Hologram(object):
                                                          plots=plot_aberration_correction)
 
         # Reconstruct the image
-        psi = G * fftshift(fft2(apodized_hologram * digital_phase_mask) * mask,
+        psi = G * fftshift(self.fft.fft2(apodized_hologram * digital_phase_mask) * mask,
                            [-x_peak, -y_peak])
 
-        reconstructed_wave = fftshift(ifft2(psi))
+        reconstructed_wave = fftshift(self.fft.ifft2(psi))
         return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
@@ -358,7 +311,7 @@ class Hologram(object):
         # Need to flip mgrid indices for this least squares solution
         y, x = self.mgrid - self.n/2
 
-        inverse_psi = fftshift(ifft2(psi))
+        inverse_psi = fftshift(self.fft.ifft2(psi))
 
         unwrapped_phase_image = unwrap_phase(inverse_psi)/2/self.wavenumber
         smooth_phase_image = gaussian_filter(unwrapped_phase_image, 50)
@@ -635,12 +588,12 @@ class Hologram(object):
             return None
 
 
-def unwrap_phase(reconstructed_wave, seed=RANDOM_SEED):
+def unwrap_phase(reconstructed_wave, seed=random_seed):
     """
     2D phase unwrap a complex reconstructed wave.
 
     Essentially a wrapper around the `~skimage.restoration.unwrap_phase`
-    function.
+    function. The output will be type float64.
 
     Parameters
     ----------
@@ -667,7 +620,7 @@ class ReconstructedWave(object):
         self._reconstructed_wave = reconstructed_wave
         self._intensity_image = None
         self._phase_image = None
-        self.random_seed = RANDOM_SEED
+        self.random_seed = random_seed
 
     @property
     def intensity(self):
