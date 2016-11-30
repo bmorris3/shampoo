@@ -43,8 +43,13 @@ class FFT(object):
 
         Parameters
         ----------
-        array : `~numpy.ndarray`
+        array : `~numpy.ndarray` (real)
             Input array
+
+        Returns
+        -------
+        ft_array : `~numpy.ndarray` (complex)
+            Fourier transform of the input array
         """
         self._fft2.input_array[:] = array
         return self._fft2()
@@ -57,6 +62,11 @@ class FFT(object):
         ----------
         array : `~numpy.ndarray`
             Input array
+
+        Returns
+        -------
+        ift_array : `~numpy.ndarray`
+            Inverse Fourier transform of input array
         """
         self._ifft2.input_array[:] = array
         return self._ifft2()
