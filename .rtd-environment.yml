@@ -2,6 +2,7 @@ name: shampoo
 
 channels:
     - astropy
+    - conda-forge
     - salilab
 
 dependencies:
