@@ -13,9 +13,9 @@ environment:
       # For this package-template, we include examples of Cython modules,
       # so Cython is required for testing. If your package does not include
       # Cython code, you can set CONDA_DEPENDENCIES=''
-      CONDA_DEPENDENCIES: "numpy Cython sphinx scipy matplotlib scikit-image astropy h5py scikit-learn fftw"
-      PIP_DEPENDENCIES: "mst_clustering pyfftw"
-      CONDA_CHANNELS: "astropy-ci-extras astropy salilab"
+      CONDA_DEPENDENCIES: "numpy Cython sphinx scipy matplotlib scikit-image astropy h5py scikit-learn fftw pyfftw"
+      PIP_DEPENDENCIES: "mst_clustering"
+      CONDA_CHANNELS: "astropy-ci-extras astropy salilab conda-forge"
 
   matrix:
 
