@@ -268,7 +268,7 @@ class Hologram(object):
         mask = self.real_image_mask(x_peak, y_peak, mask_radius)
 
         # Calculate Fourier transform of impulse response function
-        G = self.fourier_trans_of_impulse_resp_func(propagation_distance)
+        G = self.ft_impulse_resp_func(propagation_distance)
 
         # Now calculate digital phase mask. First center the spectral peak:
         shifted_ft_hologram = fftshift(ft_hologram * mask, [-x_peak, -y_peak])
@@ -388,7 +388,7 @@ class Hologram(object):
         apodized_array = array * self.apodization_window_function
         return apodized_array
 
-    def fourier_trans_of_impulse_resp_func(self, propagation_distance):
+    def ft_impulse_resp_func(self, propagation_distance):
         """
         Calculate the Fourier transform of impulse response function, sometimes
         represented as ``G`` in the literature.
@@ -496,7 +496,7 @@ class Hologram(object):
             plt.show()
         return spectrum_centroid
 
-    def reconstruct_multithread(self, propagation_distances, threads=4):
+    def _reconstruct_multithread(self, propagation_distances, threads=4):
         """
         Reconstruct phase or intensity for multiple distances, for one hologram.
 
@@ -521,14 +521,14 @@ class Hologram(object):
         wave_cube = np.zeros((n_z_slices, wave_shape[0], wave_shape[1]),
                                dtype=np.complex128)
 
-        def _reconstruct(index):
+        def __reconstruct(index):
             # Reconstruct image, add to data cube
             wave = self.reconstruct(propagation_distances[index])
             wave_cube[index, ...] = wave._reconstructed_wave
 
         # Make the Pool of workers
         pool = ThreadPool(threads)
-        pool.map(_reconstruct, range(n_z_slices))
+        pool.map(__reconstruct, range(n_z_slices))
 
         # close the pool and wait for the work to finish
         pool.close()
@@ -536,7 +536,7 @@ class Hologram(object):
 
         return wave_cube
 
-    def detect_specimens(self, reconstructed_wave, propagation_distance,
+    def _detect_specimens(self, reconstructed_wave, propagation_distance,
                          margin=100, kernel_radius=4.0, save_png_to_disk=None):
         cropped_img = reconstructed_wave.phase[margin:-margin, margin:-margin]
         best_convolved_phase = convolve_fft(cropped_img,
@@ -611,6 +611,7 @@ def unwrap_phase(reconstructed_wave, seed=random_seed):
                                               reconstructed_wave.real),
                                 seed=seed)
 
+
 class ReconstructedWave(object):
     """
     Container for reconstructed waves and their intensity and phase
@@ -625,7 +626,7 @@ class ReconstructedWave(object):
     @property
     def intensity(self):
         """
-        `~numpy.ndarray` of the reconstructed intensity
+        Reconstructed intensity (`~numpy.ndarray`, real)
         """
         if self._intensity_image is None:
             self._intensity_image = np.abs(self._reconstructed_wave)
@@ -634,9 +635,9 @@ class ReconstructedWave(object):
     @property
     def phase(self):
         """
-        `~numpy.ndarray` of the reconstructed, unwrapped phase.
+        Reconstructed, unwrapped phase (`~numpy.ndarray`, real)
 
-        Returns the unwrapped phase using `~skimage.restoration.unwrap_phase`.
+        Phase unwrapping comes from `~skimage.restoration.unwrap_phase`.
         """
         if self._phase_image is None:
             self._phase_image = unwrap_phase(self._reconstructed_wave)
@@ -646,7 +647,7 @@ class ReconstructedWave(object):
     @property
     def reconstructed_wave(self):
         """
-        `~numpy.ndarray` of the complex reconstructed wave
+        Reconstructed wave (`~numpy.ndarray`, complex)
         """
         return self._reconstructed_wave
 
@@ -668,9 +669,9 @@ class ReconstructedWave(object):
         Returns
         -------
         fig : `~matplotlib.figure.Figure`
-            Figure
+            Matplotlib figure object
         ax : `~matplotlib.axes.Axes`
-            Axis
+            Matplotlib axis object
         """
 
         all_kwargs = dict(origin='lower', interpolation='nearest', cmap=cmap)
