@@ -14,7 +14,7 @@ __all__ = ['FFT', 'fftshift']
 
 class FFT(object):
     """
-    Convenience wrapper around `~pyfftw.builders.fft2`.
+    Convenience wrapper around ``pyfftw.builders.fft2``.
     """
     def __init__(self, shape, float_precision, complex_precision, threads=2):
         """
