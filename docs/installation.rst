@@ -27,6 +27,16 @@ Requirements
 * `h5py`_
 * `pyfftw`_
 
+pyFFTW
+~~~~~~
+
+shampoo depends on a package called `pyfftw`_ for speedy, multithreaded
+Fourier transforms, which is easy to install on Mac OS X and linux but may be
+tricky on Windows machines. We recommend that Windows users install pyfftw by
+doing the following steps via conda::
+
+    conda install -c salilab fftw
+    pip install pyfftw
 
 Install shampoo
 ===============
@@ -40,6 +50,7 @@ repository::
 
     cd shampoo
     python setup.py install
+
 
 Testing
 =======

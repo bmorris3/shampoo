@@ -15,7 +15,6 @@ Contents
 
 * :ref:`reconstruction_tutorial-multiple_zs`
 * :ref:`reconstruction_tutorial-crop`
-* :ref:`reconstruction_tutorial-multithreading`
 
 .. _reconstruction_tutorial-multiple_zs:
 
@@ -172,119 +171,6 @@ about 2.2x faster than the full-sized one.
     fig, ax = wave.plot()
     fig.suptitle("USAF Target")
     fig.tight_layout()
-    plt.show()
-
-.. _reconstruction_tutorial-multithreading:
-
-Reconstruction with multithreading
-==================================
-
-For an "embarrassingly parallel" version of the reconstruction method, which is
-useful for quickly reconstructing many z-planes of the same hologram, there's
-an alternative to `~shampoo.Hologram.reconstruct` called
-`~shampoo.Hologram.reconstruct_multithread`. This method takes an array or list
-of propagation distances rather than a single distance, and the keyword
-``threads`` which sets the number of threads to spawn in the
-`~multiprocessing.dummy.Pool`. This should be a number similar to the number of
-cores in your CPU.
-
-Let's set up a similar reconstruction to the one in the first example above,
-where we'll reconstruct the USAF target five times::
-
-    import numpy as np
-
-    hologram_path = '../../data/USAF_test.tif'
-    h = Hologram.from_tif(hologram_path, crop_fraction=0.5)
-
-    n_z_slices = 5
-    propagation_distances = np.linspace(0.03585, 0.03785, n_z_slices)
-
-This time, we'll call `~shampoo.Hologram.reconstruct_multithread`, and we'll
-issue this task to four threads::
-
-    # Reconstruct at each distance
-    waves = h.reconstruct_multithread(propagation_distances, threads=4)
-
-The output ``waves`` is now a three-dimensional, complex `~numpy.ndarray` of the
-reconstructed waves with shape :math:`(N_z, X, Y)` where :math:`N_z` is the
-number of propagation distances, and :math:`(X, Y)` are the pixel dimensions of
-the reconstructed wave.
-
-Now we can perform operations on this 3D array of reconstructed waves easily.
-For example, let's see if the sum of the intensity in each wave is a proxy for
-the focus – an alternative to the standard deviation used in the previous
-example. The standard deviation works as a focus metric for images with sharp
-discontinuities, like the USAF target has. The minimum in the sum of the
-intensity should also work as a focus metric for targets that mostly absorb
-light, which the USAF target does. Let's sum those intensities and plot
-the result::
-
-    # Allocate some memory for the complex reconstructed waves
-    intensities = np.zeros((n_z_slices, h.hologram.shape[0], h.hologram.shape[1]),
-                           dtype=np.complex128)
-
-    # Loop over all propagation distances
-    for i, distance in enumerate(propagation_distances):
-
-        # Reconstruct at each distance
-        intensities[i, ...] = np.abs(waves[i, ...])
-
-    # Measure standard deviation within each intensity image
-    sum_intensities = np.sum(intensities, axis=(1, 2))
-
-    # Initialize a figure object
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    ax.plot(propagation_distances, sum_intensities, 'o-')
-    ax.axvline(propagation_distances[np.argmin(sum_intensities)], ls='--',
-               label='Best propagation distance')
-    ax.set(xlabel='Propagation distance', ylabel='sum( Intensity )')
-    ax.legend()
-    plt.show()
-
-
-The minimum in the sum of the intensities is found near propagation
-distance as we found in the early example. The result is slightly different
-because we have used the ``crop_fraction`` keyword to reconstruct only a
-fraction of the hologram (to save build time on the Read The Docs server).
-
-.. plot::
-
-    from shampoo import Hologram
-    import numpy as np
-
-    hologram_path = '../../data/USAF_test.tif'
-    h = Hologram.from_tif(hologram_path, crop_fraction=0.5)
-
-    n_z_slices = 5
-    propagation_distances = np.linspace(0.03585, 0.03785, n_z_slices)
-
-    # Reconstruct at each distance
-    waves = h.reconstruct_multithread(propagation_distances, threads=4)
-
-    # Allocate some memory for the complex reconstructed waves
-    intensities = np.zeros((n_z_slices, h.hologram.shape[0], h.hologram.shape[1]),
-                           dtype=np.complex128)
-
-    # Loop over all propagation distances
-    for i, distance in enumerate(propagation_distances):
-
-        # Reconstruct at each distance
-        intensities[i, ...] = np.abs(waves[i, ...])
-
-    # Measure standard deviation within each intensity image
-    sum_intensities = np.sum(intensities, axis=(1, 2))
-
-    # Initialize a figure object
-    import matplotlib.pyplot as plt
-
-    fig, ax = plt.subplots()
-    ax.plot(propagation_distances, sum_intensities, 'o-')
-    ax.axvline(propagation_distances[np.argmin(sum_intensities)], ls='--',
-               label='Best propagation distance')
-    ax.set(xlabel='Propagation distance', ylabel='sum( Intensity )')
-    ax.legend()
     plt.show()
 
 :ref:`Return to Top <reconstruction_tutorial>`
