@@ -29,6 +29,7 @@ env:
         - SETUP_CMD='test'
         - CONDA_DEPENDENCIES='scipy h5py scipy matplotlib scikit-image scikit-learn hdf5 fftw'
         - PIP_DEPENDENCIES='mst_clustering pyfftw'
+        - CONDA_CHANNELS='astropy-ci-extras astropy salilab'
     matrix:
         # Make sure that egg_info works without dependencies
         - SETUP_CMD='egg_info'

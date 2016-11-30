@@ -15,6 +15,7 @@ environment:
       # Cython code, you can set CONDA_DEPENDENCIES=''
       CONDA_DEPENDENCIES: "numpy Cython sphinx scipy matplotlib scikit-image astropy h5py scikit-learn fftw"
       PIP_DEPENDENCIES: "mst_clustering pyfftw"
+      CONDA_CHANNELS: "astropy-ci-extras astropy salilab"
 
   matrix:
 
