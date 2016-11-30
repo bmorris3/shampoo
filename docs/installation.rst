@@ -15,9 +15,8 @@ Requirements
     excellent `Anaconda Python Distribution <http://continuum.io/downloads>`_
     which provides easy access to all of the above dependencies and more.
 
-**shampoo** works on Linux, Mac OS X and Windows.
-It requires Python 3.5+ or 2.7 (earlier versions are not
-supported) as well as the following packages:
+**shampoo** works on Linux, Mac OS X and Windows. It requires Python 3.5 or 2.7
+(earlier versions are not supported) as well as the following packages:
 
 * `Numpy`_
 * `scipy`_
@@ -26,13 +25,18 @@ supported) as well as the following packages:
 * `sklearn`_
 * `Astropy`_
 * `h5py`_
+* `pyfftw`_
 
-Optional packages:
+pyFFTW
+~~~~~~
 
-* `pyfftw`_ - This package is **highly** recommended. It will speed up your FFT
-  computations by a factor of 2-3 for holograms with pixel dimensions
-  :math:`2^n` where :math:`n` is an integer.
+shampoo depends on a package called `pyfftw`_ for speedy, multithreaded
+Fourier transforms, which is easy to install on Mac OS X and linux but may be
+tricky on Windows machines. We recommend that Windows users install pyfftw by
+doing the following steps via conda::
 
+    conda install -c salilab fftw
+    pip install pyfftw
 
 Install shampoo
 ===============
@@ -46,6 +50,7 @@ repository::
 
     cd shampoo
     python setup.py install
+
 
 Testing
 =======

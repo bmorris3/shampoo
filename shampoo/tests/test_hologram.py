@@ -2,10 +2,10 @@ from __future__ import (absolute_import, division, print_function,
                         unicode_literals)
 
 from ..reconstruction import (Hologram, rebin_image, _find_peak_centroid,
-                              RANDOM_SEED, _crop_image, CropEfficiencyWarning)
+                              random_seed, _crop_image, CropEfficiencyWarning)
 
 import numpy as np
-np.random.seed(RANDOM_SEED)
+np.random.seed(random_seed)
 
 
 def _example_hologram(dim=2048):
