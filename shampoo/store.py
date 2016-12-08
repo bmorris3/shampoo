@@ -13,7 +13,7 @@ import os
 from skimage.io import imread
 from astropy.utils.console import ProgressBar
 
-__all__ = ['create_hdf5_archive', 'open_hdf5_archive']
+__all__ = ['HDF5Archive']
 
 
 def tiff_to_ndarray(path):
@@ -76,6 +76,7 @@ def create_hdf5_archive(hdf5_path, hologram_paths, n_z, metadata={},
                      compression=compression)
     return f
 
+
 def open_hdf5_archive(hdf5_path):
     """
     Load and return a shampoo HDF5 archive.
@@ -92,3 +93,89 @@ def open_hdf5_archive(hdf5_path):
     """
     return h5py.File(hdf5_path, 'r+')
 
+
+def _time_index_to_string(time_index):
+    return "t{0:05d}".format(time_index)
+
+
+def _wavelength_index_to_string(wavelength_index):
+    return "wavelength{0:d}".format(wavelength_index)
+
+
+class HDF5Archive(object):
+    def __init__(self, path, overwrite=False):
+        self.path = path
+
+        # Create/open the HDF5 file stream
+        mode = 'r+' if os.path.exists(path) and not overwrite else 'w'
+        self.f = h5py.File(path, mode)
+        self.is_open = True
+
+    def reopen(self):
+        if not self.is_open:
+            self.f = h5py.File(self.path, 'r+')
+            self.is_open = True
+
+    def create_group_for_timestep(self, time_index, shape, n_wavelengths=1,
+                                  compression='lzf'):
+        from .reconstruction import float_precision
+
+        if _time_index_to_string(time_index) not in self.f:
+            time_group = self.f.create_group(_time_index_to_string(time_index))
+
+            for i in range(n_wavelengths):
+                wl_group = time_group.create_group(_wavelength_index_to_string(i))
+
+                phase_dataset = wl_group.create_dataset('phase',
+                                                        dtype=float_precision,
+                                                        shape=shape,
+                                                        compression=compression)
+                intensity_dataset = wl_group.create_dataset('intensity',
+                                                            dtype=float_precision,
+                                                            shape=shape,
+                                                            compression=compression)
+                hologram_dataset = wl_group.create_dataset('hologram',
+                                                           dtype=float_precision,
+                                                           shape=shape,
+                                                           compression=compression)
+
+    def create_groups_for_series(self, n_times, shape, n_wavelengths=1,
+                                 compression='lzf'):
+        for time_index in range(n_times):
+            self.create_group_for_timestep(time_index, shape,
+                                           n_wavelengths=n_wavelengths,
+                                           compression=compression)
+
+    def update(self, data, time_index, distance_index, wavelength_index,
+               data_type=None):
+
+        if data_type is None:
+            raise ValueError("Must specify data type "
+                             "(either phase or intensity)")
+
+        data_type = data_type.lower().strip()
+
+        time = _time_index_to_string(time_index)
+        wavelength = _wavelength_index_to_string(wavelength_index)
+
+        self.f[time][wavelength][data_type][distance_index, ...] = data
+
+        self.f.flush()
+
+    def get(self, time_index, distance_index, wavelength_index, data_type=None):
+
+        if data_type is None:
+            raise ValueError("Must specify data type "
+                             "(either phase or intensity)")
+
+        data_type = data_type.lower().strip()
+
+        time = _time_index_to_string(time_index)
+        wavelength = _wavelength_index_to_string(wavelength_index)
+
+        return self.f[time][wavelength][data_type][distance_index, ...][:]
+
+    def close(self):
+        self.f.flush()
+        self.f.close()
+        self.is_open = False

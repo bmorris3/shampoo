@@ -17,6 +17,7 @@ from multiprocessing.dummy import Pool as ThreadPool
 
 from .vis import save_scaled_image
 from .fftutils import FFT, fftshift
+from .store import HDF5Archive
 
 import numpy as np
 
@@ -29,11 +30,12 @@ from skimage.feature import blob_doh
 
 from astropy.utils.exceptions import AstropyUserWarning
 from astropy.convolution import convolve_fft, MexicanHat2DKernel
+from astropy.utils.console import ProgressBar
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import ImageGrid
 
-__all__ = ['Hologram', 'ReconstructedWave', 'unwrap_phase']
+__all__ = ['Hologram', 'ReconstructedWave', 'HologramSeries']
 random_seed = 42
 two_to_n = [2 ** i for i in range(13)]
 float_precision = np.float64
@@ -113,7 +115,7 @@ class Hologram(object):
     Container for holograms and methods to reconstruct them.
     """
     def __init__(self, hologram, crop_fraction=None, wavelength=405e-9,
-                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6, threads=2):
+                 rebin_factor=1, dx=3.45e-6, dy=3.45e-6, threads=4):
         """
         Parameters
         ----------
@@ -256,11 +258,11 @@ class Hologram(object):
 
         # Create mask based on coords of spectral peak:
         if self.rebin_factor != 1:
-            mask_radius = 150./self.rebin_factor
+            mask_radius = 300./self.rebin_factor
         elif self.crop_fraction is not None and self.crop_fraction != 0:
-            mask_radius = 150./abs(np.log(self.crop_fraction)/np.log(2))
+            mask_radius = 300./abs(np.log(self.crop_fraction)/np.log(2))
         else:
-            mask_radius = 150.
+            mask_radius = 300.
 
         x_peak, y_peak = self.fourier_peak_centroid(ft_hologram, mask_radius,
                                                     plot=plot_fourier_peak)
@@ -698,3 +700,42 @@ class ReconstructedWave(object):
             ax[1].set(title='Phase')
 
         return fig, ax
+
+
+class HologramSeries(object):
+    def __init__(self, holograms):
+        """
+        Parameters
+        ----------
+        holograms : list of `~shampoo.Hologram`s
+        """
+        self.holograms = holograms
+
+    @classmethod
+    def from_tifs(cls, hologram_paths, **kwargs):
+        holograms = [Hologram.from_tif(path, **kwargs)
+                     for path in hologram_paths]
+        return cls(holograms)
+
+    def reconstruct_to_hdf5(self, propagation_distances, file_name,
+                            overwrite=False):
+        holo = self.holograms[0]
+
+        archive = HDF5Archive(file_name, overwrite=overwrite)
+        shape = (len(propagation_distances), holo.n, holo.n)
+        archive.create_groups_for_series(len(self.holograms), shape)
+
+        n_iterations = len(self.holograms) * len(propagation_distances)
+        with ProgressBar(n_iterations) as bar:
+            for i, hologram in enumerate(self.holograms):
+                for j, distance in enumerate(propagation_distances):
+                    bar.update()
+                    reconstructed_wave = hologram.reconstruct(distance)
+
+                    # for attr in ['phase']:
+                    for attr in ['phase', 'intensity']:
+                        archive.update(getattr(reconstructed_wave, attr),
+                                       i, j, 0, data_type=attr)
+
+
+        return archive
