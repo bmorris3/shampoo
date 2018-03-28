@@ -47,9 +47,10 @@ def rebin_image(a, binning_factor):
     if binning_factor == 1:
         return a
 
-    new_shape = (a.shape[0]/binning_factor, a.shape[1]/binning_factor)
+    new_shape = (a.shape[0]//binning_factor, a.shape[1]//binning_factor)
     sh = (new_shape[0], a.shape[0]//new_shape[0], new_shape[1],
           a.shape[1]//new_shape[1])
+
     return a.reshape(sh).mean(-1).mean(1)
 
 
@@ -275,6 +276,7 @@ class Hologram(object):
         # Now calculate digital phase mask. First center the spectral peak:
         shifted_ft_hologram = fftshift(ft_hologram * mask, [-x_peak, -y_peak])
 
+
         # Apodize the result
         psi = self.apodize(shifted_ft_hologram * G)
         digital_phase_mask = self.get_digital_phase_mask(psi,
@@ -285,6 +287,7 @@ class Hologram(object):
                            [-x_peak, -y_peak])
 
         reconstructed_wave = fftshift(self.fft.ifft2(psi))
+
         return reconstructed_wave
 
     def get_digital_phase_mask(self, psi, plots=False):
@@ -417,6 +420,7 @@ class Hologram(object):
         second_term = (self.wavelength**2 * (y + self.n**2 * self.dy**2 /
                        (2.0 * propagation_distance * self.wavelength))**2 /
                        (self.n**2 * self.dy**2))
+
         G = np.exp(-1j * self.wavenumber * propagation_distance *
                    np.sqrt(1.0 - first_term - second_term))
         return G
@@ -475,9 +479,8 @@ class Hologram(object):
             Pixel at the centroid of the spike in Fourier transform of the
             hologram near the real image.
         """
-        margin = int(self.n*margin_factor)
-        #abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:-margin]
-        abs_fourier_arr = np.abs(fourier_arr)[margin:self.n//2, margin:-margin]
+        margin = int(self.n * margin_factor)
+        abs_fourier_arr = np.abs(fourier_arr)[margin:-margin, margin:self.n//2]
         spectrum_centroid = _find_peak_centroid(abs_fourier_arr,
                                                 gaussian_width=10) + margin
 
@@ -736,6 +739,5 @@ class HologramSeries(object):
                     for attr in ['phase', 'intensity']:
                         archive.update(getattr(reconstructed_wave, attr),
                                        i, j, 0, data_type=attr)
-
 
         return archive
